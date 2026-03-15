@@ -15,6 +15,35 @@ func (m *model) updateTableColumns() {
 	if w <= 0 {
 		w = 120
 	}
+	if m.isUserTab() {
+		jobIDW := 10
+		partW := 10
+		nameW := 18
+		userW := 10
+		stateW := 5
+		timeW := 10
+		nodesW := 7
+		nodeListW := w - (jobIDW + partW + nameW + userW + stateW + timeW + nodesW + 10)
+		if nodeListW < 18 {
+			nodeListW = 18
+		}
+		m.table.SetColumns([]table.Column{
+			{Title: "JOBID", Width: jobIDW},
+			{Title: "PARTITION", Width: partW},
+			{Title: "NAME", Width: nameW},
+			{Title: "USER", Width: userW},
+			{Title: "ST", Width: stateW},
+			{Title: "TIME", Width: timeW},
+			{Title: "NODES", Width: nodesW},
+			{Title: "NODELIST(REASON)", Width: nodeListW},
+		})
+		tw := w - 2
+		if tw < 40 {
+			tw = 40
+		}
+		m.table.SetWidth(tw)
+		return
+	}
 	p := m.selectedPartition()
 	nodeNeed := len("Node") + 2
 	stateNeed := len("State") + 2
@@ -114,10 +143,21 @@ func (m *model) updateTableHeight() {
 }
 
 func (m *model) selectedPartition() *partitionSummary {
+	if m.isUserTab() {
+		return nil
+	}
 	if len(m.partitions) == 0 || m.activeTab < 0 || m.activeTab >= len(m.partitions) {
 		return nil
 	}
 	return &m.partitions[m.activeTab]
+}
+
+func (m *model) isUserTab() bool {
+	return m.activeTab == len(m.partitions)
+}
+
+func (m *model) tabCount() int {
+	return len(m.partitions) + 1 // + User
 }
 
 func (m *model) selectedNodeName() string {
@@ -135,6 +175,13 @@ func (m *model) selectedNodeName() string {
 }
 
 func (m *model) refreshTableRows(resetCursor bool) {
+	if m.isUserTab() {
+		m.visibleNodes = nil
+		m.table.SetRows([]table.Row{})
+		m.table.SetCursor(0)
+		return
+	}
+
 	p := m.selectedPartition()
 	if p == nil {
 		m.table.SetRows([]table.Row{})
@@ -169,7 +216,7 @@ func (m *model) refreshTableRows(resetCursor bool) {
 			formatGPUCell(n.GPUAlloc, n.GPUTotal),
 		})
 	}
-	m.table.SetRows(rows)
+	m.table.SetRows(m.normalizeRowsForTable(rows))
 	if len(rows) == 0 {
 		m.table.SetCursor(0)
 		return
@@ -184,10 +231,10 @@ func (m *model) refreshTableRows(resetCursor bool) {
 }
 
 func (m *model) switchTab(delta int) {
-	if len(m.partitions) == 0 {
+	if m.tabCount() == 0 {
 		return
 	}
-	m.activeTab = (m.activeTab + delta + len(m.partitions)) % len(m.partitions)
+	m.activeTab = (m.activeTab + delta + m.tabCount()) % m.tabCount()
 	m.detailOpen = false
 	m.detailBusy = false
 	m.detailErr = nil
@@ -200,6 +247,9 @@ func (m *model) switchTab(delta int) {
 }
 
 func (m *model) toggleNodeDetail() tea.Cmd {
+	if m.isUserTab() {
+		return nil
+	}
 	node := m.selectedNodeName()
 	if node == "" {
 		m.detailOpen = true
@@ -222,6 +272,39 @@ func (m *model) toggleNodeDetail() tea.Cmd {
 	m.detailBusy = true
 	m.updateTableHeight()
 	return fetchNodeDetailCmd(node)
+}
+
+func (m *model) buildUserRows() []table.Row {
+	return nil
+}
+
+func defaultUserLabel(user string) string {
+	if strings.TrimSpace(user) == "" {
+		return "current"
+	}
+	return user
+}
+
+func (m *model) normalizeRowsForTable(rows []table.Row) []table.Row {
+	cols := m.table.Columns()
+	colN := len(cols)
+	if colN == 0 {
+		return rows
+	}
+	out := make([]table.Row, 0, len(rows))
+	for _, r := range rows {
+		row := make(table.Row, colN)
+		copyN := len(r)
+		if copyN > colN {
+			copyN = colN
+		}
+		copy(row[:copyN], r[:copyN])
+		for i := copyN; i < colN; i++ {
+			row[i] = ""
+		}
+		out = append(out, row)
+	}
+	return out
 }
 
 func (m *model) formatCPUCell(alloc, total int) string {

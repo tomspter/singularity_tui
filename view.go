@@ -6,6 +6,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	ltable "charm.land/lipgloss/v2/table"
 )
 
 func (m model) separator() string {
@@ -142,6 +143,15 @@ func (m model) renderMainView() string {
 	if m.lastErr != nil {
 		b.WriteString(m.errorStyle.Render("Error: " + m.lastErr.Error()))
 		b.WriteString("\n")
+	} else if m.isUserTab() {
+		b.WriteString(m.renderUserOverview())
+		b.WriteString("\n")
+		b.WriteString(m.separator())
+		b.WriteString("\n")
+		b.WriteString(m.renderUserTables())
+		b.WriteString("\n")
+		b.WriteString(m.renderStatusBar(status, lastSync))
+		return b.String()
 	} else if p == nil {
 		b.WriteString(m.mutedStyle.Render("No partition data from sinfo."))
 		b.WriteString("\n")
@@ -259,6 +269,152 @@ func (m model) renderStatusHelp() string {
 	return "←/→ partition  s state  c cpu  m mem  g gpu  t detail  r refresh  q quit"
 }
 
+func (m model) renderUserOverview() string {
+	u := m.userSummary
+	var b strings.Builder
+	b.WriteString(m.subtitleStyle.Render(fmt.Sprintf("User: %s   Jobs: %d", defaultUserLabel(u.User), u.TotalJobs)))
+	b.WriteString("\n")
+	if len(u.StateCount) > 0 {
+		b.WriteString("States: " + renderStateSummary(u.StateCount))
+		b.WriteString("\n")
+	}
+	if u.QuotaErr != "" {
+		b.WriteString(m.errorStyle.Render("squota: " + u.QuotaErr))
+		return b.String()
+	}
+	if len(u.QuotaEntries) == 0 {
+		b.WriteString(m.mutedStyle.Render("squota: no data"))
+		return b.String()
+	}
+	maxRows := 4
+	if len(u.QuotaEntries) < maxRows {
+		maxRows = len(u.QuotaEntries)
+	}
+	for i := 0; i < maxRows; i++ {
+		q := u.QuotaEntries[i]
+		label := lipgloss.NewStyle().Foreground(lipgloss.Color(colorFgSecondary)).Width(18).Render(fmt.Sprintf("%s %s", q.Account, q.Filesystem))
+		capRatio := ratioFromInts(q.UsedBytes, q.HardBytes)
+		filesRatio := ratioFromInts(q.FilesUsed, q.FilesHard)
+		capBar := m.memBar.ViewAs(capRatio)
+		filesBar := m.cpuBar.ViewAs(filesRatio)
+		capPct := int(capRatio * 100)
+		filesPct := int(filesRatio * 100)
+		capText := fmt.Sprintf("%s/%s (%d%%)", formatMemMB(q.UsedBytes), formatMemMB(q.HardBytes), capPct)
+		filesText := fmt.Sprintf("%d/%d (%d%%)", q.FilesUsed, q.FilesHard, filesPct)
+		b.WriteString(fmt.Sprintf("%s CAP %s %s  FILE %s %s", label, capBar, capText, filesBar, filesText))
+		if i < maxRows-1 {
+			b.WriteString("\n")
+		}
+	}
+	return b.String()
+}
+
+func (m model) renderUserTables() string {
+	u := m.userSummary
+	w := m.width - 2
+	if w < 80 {
+		w = 80
+	}
+
+	buildStyle := func(row, col int, queueRows [][]string) lipgloss.Style {
+		if row == ltable.HeaderRow {
+			return lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(colorFgPrimary))
+		}
+		s := lipgloss.NewStyle().Foreground(lipgloss.Color(colorFgSecondary))
+		// ST column in squeue uses semantic color.
+		if len(queueRows) > row && row >= 0 && col == 4 {
+			state := queueRows[row][4]
+			s = s.Foreground(lipgloss.Color(stateColor(state))).Bold(true)
+		}
+		return s
+	}
+
+	queueHeaders := []string{"JOBID", "PARTITION", "NAME", "USER", "ST", "TIME", "NODES", "NODELIST(REASON)"}
+	queueRows := make([][]string, 0, len(u.Jobs))
+	for _, j := range u.Jobs {
+		queueRows = append(queueRows, []string{
+			j.JobID, j.Partition, j.Name, j.User, j.State, j.RunTime, j.Nodes, j.NodeList,
+		})
+	}
+	if len(queueRows) == 0 {
+		if u.QueueErr != "" {
+			queueRows = append(queueRows, []string{"-", "-", "-", "-", "ERR", "-", "-", u.QueueErr})
+		} else {
+			queueRows = append(queueRows, []string{"-", "-", "no jobs", defaultUserLabel(u.User), "-", "-", "-", "-"})
+		}
+	}
+	queueTable := ltable.New().
+		Border(lipgloss.NormalBorder()).
+		BorderStyle(lipgloss.NewStyle().Foreground(lipgloss.Color(colorSeparator))).
+		BorderColumn(true).
+		BorderRow(false).
+		Width(w).
+		Headers(queueHeaders...).
+		Rows(queueRows...).
+		StyleFunc(func(row, col int) lipgloss.Style { return buildStyle(row, col, queueRows) }).
+		String()
+
+	quotaTitle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(colorFgPrimary)).Render("SQUOTA")
+	quotaTable := ""
+	if u.QuotaErr != "" {
+		quotaTable = m.errorStyle.Render(u.QuotaErr)
+	} else {
+		quotaHeaders := []string{"ACCOUNT", "FS", "USED", "SOFT", "HARD", "FILES", "FSOFT", "FHARD"}
+		quotaRows := make([][]string, 0, len(u.QuotaEntries))
+		for _, q := range u.QuotaEntries {
+			quotaRows = append(quotaRows, []string{
+				q.Account,
+				q.Filesystem,
+				formatMemMB(q.UsedBytes),
+				formatMemMB(q.SoftBytes),
+				formatMemMB(q.HardBytes),
+				fmt.Sprintf("%d", q.FilesUsed),
+				fmt.Sprintf("%d", q.FilesSoft),
+				fmt.Sprintf("%d", q.FilesHard),
+			})
+		}
+		if len(quotaRows) == 0 {
+			quotaRows = append(quotaRows, []string{"-", "-", "-", "-", "-", "-", "-", "-"})
+		}
+		quotaTable = ltable.New().
+			Border(lipgloss.NormalBorder()).
+			BorderStyle(lipgloss.NewStyle().Foreground(lipgloss.Color(colorSeparator))).
+			BorderColumn(true).
+			BorderRow(false).
+			Width(w).
+			Headers(quotaHeaders...).
+			Rows(quotaRows...).
+			StyleFunc(func(row, _ int) lipgloss.Style {
+				if row == ltable.HeaderRow {
+					return lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(colorFgPrimary))
+				}
+				return lipgloss.NewStyle().Foreground(lipgloss.Color(colorFgSecondary))
+			}).
+			String()
+	}
+
+	return strings.Join([]string{
+		lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(colorFgPrimary)).Render("SQUEUE"),
+		queueTable,
+		quotaTitle,
+		quotaTable,
+	}, "\n")
+}
+
+func ratioFromInts(used, total int) float64 {
+	if total <= 0 {
+		return 0
+	}
+	r := float64(used) / float64(total)
+	if r < 0 {
+		return 0
+	}
+	if r > 1 {
+		return 1
+	}
+	return r
+}
+
 func truncateToWidth(s string, width int) string {
 	if width <= 0 {
 		return ""
@@ -292,10 +448,7 @@ func minInt(a, b int) int {
 }
 
 func (m model) renderTabs() string {
-	if len(m.partitions) == 0 {
-		return m.mutedStyle.Render("Partitions: -")
-	}
-	parts := make([]string, 0, len(m.partitions))
+	parts := make([]string, 0, len(m.partitions)+1)
 	for i, p := range m.partitions {
 		label := fmt.Sprintf("%s (%d)", p.Name, len(p.Nodes))
 		if i == m.activeTab {
@@ -303,6 +456,16 @@ func (m model) renderTabs() string {
 		} else {
 			parts = append(parts, m.tabStyle.Render(label))
 		}
+	}
+	userIdx := len(m.partitions)
+	userLabel := "User"
+	if userIdx == m.activeTab {
+		parts = append(parts, m.activeTabStyle.Render(userLabel))
+	} else {
+		parts = append(parts, m.tabStyle.Render(userLabel))
+	}
+	if len(parts) == 0 {
+		return m.mutedStyle.Render("Tabs: -")
 	}
 	return lipgloss.JoinHorizontal(lipgloss.Top, parts...)
 }

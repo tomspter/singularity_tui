@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 	"sort"
 	"strconv"
@@ -326,4 +327,90 @@ func runCommand(parent context.Context, name string, args ...string) (string, er
 		return "", fmt.Errorf("%s %v: %w (%s)", name, strings.Join(args, " "), err, strings.TrimSpace(string(out)))
 	}
 	return string(out), nil
+}
+
+func fetchUserSummary(ctx context.Context) userSummary {
+	user := strings.TrimSpace(os.Getenv("USER"))
+	out := userSummary{
+		User:       user,
+		StateCount: map[string]int{},
+		Jobs:       []userJob{},
+	}
+
+	// squeue aggregation
+	squeueArgs := []string{"-h", "-o", "%i|%P|%j|%u|%t|%M|%D|%R"}
+	if user != "" {
+		squeueArgs = append([]string{"-u", user}, squeueArgs...)
+	}
+	sqOut, sqErr := runCommand(ctx, "squeue", squeueArgs...)
+	if sqErr != nil {
+		out.QueueErr = sqErr.Error()
+	} else {
+		lines := strings.Split(strings.TrimSpace(sqOut), "\n")
+		for _, line := range lines {
+			line = strings.TrimSpace(line)
+			if line == "" {
+				continue
+			}
+			f := strings.Split(line, "|")
+			if len(f) < 8 {
+				continue
+			}
+			job := userJob{
+				JobID:     strings.TrimSpace(f[0]),
+				Partition: strings.TrimSpace(f[1]),
+				Name:      strings.TrimSpace(f[2]),
+				User:      strings.TrimSpace(f[3]),
+				State:     strings.TrimSpace(f[4]),
+				RunTime:   strings.TrimSpace(f[5]),
+				Nodes:     strings.TrimSpace(f[6]),
+				NodeList:  strings.TrimSpace(f[7]),
+			}
+			state := normalizeState(job.State)
+			out.TotalJobs++
+			out.StateCount[state]++
+			out.Jobs = append(out.Jobs, job)
+		}
+	}
+
+	// squota summary lines
+	quotaOut, quotaErr := runCommand(ctx, "squota")
+	if quotaErr != nil {
+		out.QuotaErr = quotaErr.Error()
+	} else {
+		for _, line := range strings.Split(strings.TrimSpace(quotaOut), "\n") {
+			line = strings.TrimSpace(line)
+			if line == "" {
+				continue
+			}
+			if strings.HasPrefix(line, "-") {
+				continue
+			}
+			fields := strings.Fields(line)
+			if len(fields) < 13 {
+				continue
+			}
+			if strings.EqualFold(fields[0], "account") {
+				continue
+			}
+			entry := quotaEntry{
+				Account:    fields[0],
+				Filesystem: fields[1],
+				UsedBytes:  parseMemToMB(fields[2] + fields[3]),
+				SoftBytes:  parseMemToMB(fields[4] + fields[5]),
+				HardBytes:  parseMemToMB(fields[6] + fields[7]),
+				GraceBytes: fields[8],
+				FilesUsed:  parseInt(fields[9]),
+				FilesSoft:  parseInt(fields[10]),
+				FilesHard:  parseInt(fields[11]),
+				GraceFiles: fields[12],
+			}
+			out.QuotaEntries = append(out.QuotaEntries, entry)
+			if len(out.QuotaEntries) >= 10 {
+				break
+			}
+		}
+	}
+
+	return out
 }

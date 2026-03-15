@@ -56,6 +56,7 @@ type dataSource interface {
 
 type dataMsg struct {
 	partitions []partitionSummary
+	user       userSummary
 	loadedAt   time.Time
 }
 
@@ -73,6 +74,43 @@ type nodeDetailMsg struct {
 type nodeDetailErrMsg struct {
 	node string
 	err  error
+}
+
+type userSummary struct {
+	User         string
+	TotalJobs    int
+	StateCount   map[string]int
+	CPUReq       int
+	MemReqMB     int
+	GPUReq       int
+	Jobs         []userJob
+	QuotaEntries []quotaEntry
+	QueueErr     string
+	QuotaErr     string
+}
+
+type userJob struct {
+	JobID     string
+	Partition string
+	Name      string
+	User      string
+	State     string
+	RunTime   string
+	Nodes     string
+	NodeList  string
+}
+
+type quotaEntry struct {
+	Account    string
+	Filesystem string
+	UsedBytes  int
+	SoftBytes  int
+	HardBytes  int
+	GraceBytes string
+	FilesUsed  int
+	FilesSoft  int
+	FilesHard  int
+	GraceFiles string
 }
 
 type keyMap struct {
@@ -121,6 +159,7 @@ type model struct {
 	lastErr      error
 	lastUpdated  time.Time
 	partitions   []partitionSummary
+	userSummary  userSummary
 	visibleNodes []nodeInfo
 	activeTab    int
 	sortMode     sortMode

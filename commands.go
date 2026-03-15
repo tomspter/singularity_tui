@@ -18,8 +18,10 @@ func fetchDataCmd(ds dataSource) tea.Cmd {
 		if err != nil {
 			return errMsg{err: err}
 		}
+		user := fetchUserSummary(context.Background())
 		return dataMsg{
 			partitions: summaries,
+			user:       user,
 			loadedAt:   time.Now(),
 		}
 	}
