@@ -107,10 +107,8 @@ func (m model) overlayPopup(base, popup string) string {
 
 func (m model) View() tea.View {
 	content := m.renderMainView()
-	if m.userActionOpen {
-		content = m.overlayPopup(content, m.renderUserActionPopup())
-	} else if m.detailOpen {
-		content = m.overlayPopup(content, m.renderPopupBox())
+	if m.modalOpen {
+		content = m.overlayPopup(content, m.renderModal())
 	}
 	v := tea.NewView(content)
 	v.AltScreen = true
@@ -267,8 +265,11 @@ func (m model) renderStatusBar(status, lastSync string) string {
 }
 
 func (m model) renderStatusHelp() string {
-	if m.userActionOpen {
-		return "Enter/y confirm  n/esc cancel  q quit"
+	if m.modalOpen {
+		if m.modalKind == modalNodeDetail {
+			return "r raw on/off  ↑/↓ or j/k scroll raw  ←/→ button  Enter select  esc close"
+		}
+		return "←/→ focus button  Enter/y select  n/esc close  q quit"
 	}
 	if m.isUserTab() {
 		return "↑/↓ select  pgup/pgdn page  k cancel job  ←/→ tab  r refresh  q quit"
@@ -333,31 +334,6 @@ func ratioFromInts(used, total int) float64 {
 		return 1
 	}
 	return r
-}
-
-func (m model) renderUserActionPopup() string {
-	w := m.width
-	if w <= 0 {
-		w = 100
-	}
-	popupW := w / 2
-	if popupW < 54 {
-		popupW = 54
-	}
-	if popupW > 100 {
-		popupW = 100
-	}
-	bodyW := popupW - 6
-	if bodyW < 20 {
-		bodyW = 20
-	}
-	title := m.titleStyle.Render("User Action")
-	jobLine := m.mutedStyle.Render(fmt.Sprintf("job: %s  user: %s", m.userActionJob.JobID, m.userActionJob.User))
-	msg := lipgloss.NewStyle().Width(bodyW).Foreground(lipgloss.Color(colorFgPrimary)).Render(m.userActionMsg)
-	hint := m.mutedStyle.Render("Enter/y confirm  n/esc close")
-	popupSep := m.separatorStyle.Render(strings.Repeat("-", bodyW))
-	content := strings.Join([]string{title, jobLine, popupSep, msg, hint}, "\n")
-	return m.popupStyle.Width(popupW).Render(content)
 }
 
 func truncateToWidth(s string, width int) string {

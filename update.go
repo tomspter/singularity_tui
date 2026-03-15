@@ -18,37 +18,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.updateTableHeight()
 		return m, nil
 	case tea.KeyPressMsg:
-		if m.userActionOpen {
-			switch msg.String() {
-			case "esc", "n":
-				m.userActionOpen = false
-				m.userActionBusy = false
-				return m, nil
-			case "enter", "y":
-				if m.userActionCanCancel && !m.userActionBusy {
-					m.userActionBusy = true
-					m.userActionMsg = "Running scancel ..."
-					return m, cancelJobCmd(m.userActionJob.JobID)
-				}
-				m.userActionOpen = false
-				m.userActionBusy = false
-				return m, nil
-			default:
-				return m, nil
-			}
-		}
-
-		if m.detailOpen {
-			switch {
-			case msg.String() == "t", msg.String() == "esc", key.Matches(msg, m.keys.NodeDetail):
-				m.detailOpen = false
-				m.detailBusy = false
-				m.detailErr = nil
-				return m, nil
-			case key.Matches(msg, m.keys.Quit):
+		if m.modalOpen {
+			if key.Matches(msg, m.keys.Quit) {
 				return m, tea.Quit
 			}
-			return m, nil
+			return m, m.updateModal(msg)
 		}
 
 		switch {
@@ -145,6 +119,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.detailBusy = false
 			m.detailErr = nil
 			m.detailBody = msg.detail
+			if m.modalOpen && m.modalKind == modalNodeDetail {
+				m.modalTitle = nodeDetailTitle(msg.node, msg.detail)
+				m.setModalBody(formatNodeDetailDisplay(msg.node, msg.detail))
+			}
 		}
 		m.updateTableHeight()
 		return m, nil
@@ -153,18 +131,28 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.detailBusy = false
 			m.detailErr = msg.err
 			m.detailBody = ""
+			if m.modalOpen && m.modalKind == modalNodeDetail {
+				m.modalTitle = firstNonEmpty(m.detailNode, "Node Detail")
+				m.setModalBody("Error: " + msg.err.Error())
+			}
 		}
 		m.updateTableHeight()
 		return m, nil
 	case userCancelResultMsg:
-		m.userActionBusy = false
+		m.modalBusy = false
 		if msg.err != nil {
-			m.userActionCanCancel = false
-			m.userActionMsg = "scancel failed: " + msg.err.Error()
+			if m.modalOpen && m.modalKind == modalUserAction {
+				m.setModalBody("scancel failed: " + msg.err.Error())
+				m.modalButtons = []modalButton{{Label: "Close", Action: modalActionClose}}
+				m.modalFocus = 0
+			}
 			return m, nil
 		}
-		m.userActionCanCancel = false
-		m.userActionMsg = "scancel success."
+		if m.modalOpen && m.modalKind == modalUserAction {
+			m.setModalBody("scancel success.")
+			m.modalButtons = []modalButton{{Label: "Close", Action: modalActionClose}}
+			m.modalFocus = 0
+		}
 		m.loading = true
 		return m, fetchDataCmd(m.ds)
 	}

@@ -154,41 +154,66 @@ const (
 	sortByGPU
 )
 
+type modalKind int
+
+const (
+	modalNone modalKind = iota
+	modalNodeDetail
+	modalUserAction
+)
+
+type modalAction int
+
+const (
+	modalActionClose modalAction = iota
+	modalActionCancelJob
+	modalActionToggleRaw
+)
+
+type modalButton struct {
+	Label  string
+	Action modalAction
+}
+
 type model struct {
-	ds                  dataSource
-	table               table.Model
-	userList            list.Model
-	help                help.Model
-	keys                keyMap
-	width               int
-	height              int
-	tableHeight         int
-	loading             bool
-	lastErr             error
-	lastUpdated         time.Time
-	partitions          []partitionSummary
-	userSummary         userSummary
-	visibleNodes        []nodeInfo
-	activeTab           int
-	sortMode            sortMode
-	nodeColW            int
-	stateColW           int
-	cpuColW             int
-	memColW             int
-	gpuColW             int
-	cpuBar              progress.Model
-	memBar              progress.Model
-	gpuBar              progress.Model
-	detailOpen          bool
-	detailNode          string
-	detailBody          string
-	detailErr           error
-	detailBusy          bool
-	userActionOpen      bool
-	userActionBusy      bool
-	userActionJob       userJob
-	userActionCanCancel bool
-	userActionMsg       string
+	ds            dataSource
+	table         table.Model
+	userList      list.Model
+	help          help.Model
+	keys          keyMap
+	width         int
+	height        int
+	tableHeight   int
+	loading       bool
+	lastErr       error
+	lastUpdated   time.Time
+	partitions    []partitionSummary
+	userSummary   userSummary
+	visibleNodes  []nodeInfo
+	activeTab     int
+	sortMode      sortMode
+	nodeColW      int
+	stateColW     int
+	cpuColW       int
+	memColW       int
+	gpuColW       int
+	cpuBar        progress.Model
+	memBar        progress.Model
+	gpuBar        progress.Model
+	detailNode    string
+	detailBody    string
+	detailErr     error
+	detailBusy    bool
+	userActionJob userJob
+	modalOpen     bool
+	modalKind     modalKind
+	modalTitle    string
+	modalBody     string
+	modalButtons  []modalButton
+	modalFocus    int
+	modalBusy     bool
+	modalRawOpen  bool
+	modalRawOff   int
 
 	titleStyle     lipgloss.Style
 	subtitleStyle  lipgloss.Style

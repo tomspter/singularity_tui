@@ -237,11 +237,9 @@ func (m *model) switchTab(delta int) {
 		return
 	}
 	m.activeTab = (m.activeTab + delta + m.tabCount()) % m.tabCount()
-	m.detailOpen = false
 	m.detailBusy = false
 	m.detailErr = nil
-	m.userActionOpen = false
-	m.userActionBusy = false
+	m.closeModal()
 	m.detailBody = ""
 	m.detailNode = ""
 	m.table.SetCursor(0)
@@ -256,24 +254,23 @@ func (m *model) toggleNodeDetail() tea.Cmd {
 	}
 	node := m.selectedNodeName()
 	if node == "" {
-		m.detailOpen = true
 		m.detailBusy = false
 		m.detailErr = errors.New("no node selected")
 		m.detailBody = ""
+		m.openModal(modalNodeDetail, "Node Detail", "No node selected.", []modalButton{
+			{Label: "[r] Raw Output", Action: modalActionToggleRaw},
+			{Label: "[esc] Close", Action: modalActionClose},
+		})
 		return nil
 	}
-	if m.detailOpen && m.detailNode == node {
-		m.detailOpen = false
-		m.detailBusy = false
-		m.detailErr = nil
-		m.updateTableHeight()
-		return nil
-	}
-	m.detailOpen = true
 	m.detailNode = node
 	m.detailBody = ""
 	m.detailErr = nil
 	m.detailBusy = true
+	m.openModal(modalNodeDetail, node+" [LOADING]", "Loading ...", []modalButton{
+		{Label: "[r] Raw Output", Action: modalActionToggleRaw},
+		{Label: "[esc] Close", Action: modalActionClose},
+	})
 	m.updateTableHeight()
 	return fetchNodeDetailCmd(node)
 }
