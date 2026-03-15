@@ -6,6 +6,7 @@ import (
 
 	"charm.land/bubbles/v2/help"
 	"charm.land/bubbles/v2/key"
+	"charm.land/bubbles/v2/list"
 	"charm.land/bubbles/v2/progress"
 	"charm.land/bubbles/v2/table"
 	"charm.land/lipgloss/v2"
@@ -76,6 +77,11 @@ type nodeDetailErrMsg struct {
 	err  error
 }
 
+type userCancelResultMsg struct {
+	jobID string
+	err   error
+}
+
 type userSummary struct {
 	User         string
 	TotalJobs    int
@@ -120,6 +126,7 @@ type keyMap struct {
 	SortCPU       key.Binding
 	SortMem       key.Binding
 	SortGPU       key.Binding
+	UserCancel    key.Binding
 	NodeDetail    key.Binding
 	Refresh       key.Binding
 	ToggleHelp    key.Binding
@@ -127,13 +134,13 @@ type keyMap struct {
 }
 
 func (k keyMap) ShortHelp() []key.Binding {
-	return []key.Binding{k.PrevPartition, k.NextPartition, k.SortState, k.SortCPU, k.NodeDetail, k.Quit}
+	return []key.Binding{k.PrevPartition, k.NextPartition, k.SortState, k.SortCPU, k.UserCancel, k.Quit}
 }
 
 func (k keyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
 		{k.PrevPartition, k.NextPartition, k.SortState, k.SortCPU},
-		{k.SortMem, k.SortGPU, k.NodeDetail, k.Refresh},
+		{k.SortMem, k.SortGPU, k.UserCancel, k.Refresh},
 		{k.ToggleHelp, k.Quit},
 	}
 }
@@ -148,34 +155,40 @@ const (
 )
 
 type model struct {
-	ds           dataSource
-	table        table.Model
-	help         help.Model
-	keys         keyMap
-	width        int
-	height       int
-	tableHeight  int
-	loading      bool
-	lastErr      error
-	lastUpdated  time.Time
-	partitions   []partitionSummary
-	userSummary  userSummary
-	visibleNodes []nodeInfo
-	activeTab    int
-	sortMode     sortMode
-	nodeColW     int
-	stateColW    int
-	cpuColW      int
-	memColW      int
-	gpuColW      int
-	cpuBar       progress.Model
-	memBar       progress.Model
-	gpuBar       progress.Model
-	detailOpen   bool
-	detailNode   string
-	detailBody   string
-	detailErr    error
-	detailBusy   bool
+	ds                  dataSource
+	table               table.Model
+	userList            list.Model
+	help                help.Model
+	keys                keyMap
+	width               int
+	height              int
+	tableHeight         int
+	loading             bool
+	lastErr             error
+	lastUpdated         time.Time
+	partitions          []partitionSummary
+	userSummary         userSummary
+	visibleNodes        []nodeInfo
+	activeTab           int
+	sortMode            sortMode
+	nodeColW            int
+	stateColW           int
+	cpuColW             int
+	memColW             int
+	gpuColW             int
+	cpuBar              progress.Model
+	memBar              progress.Model
+	gpuBar              progress.Model
+	detailOpen          bool
+	detailNode          string
+	detailBody          string
+	detailErr           error
+	detailBusy          bool
+	userActionOpen      bool
+	userActionBusy      bool
+	userActionJob       userJob
+	userActionCanCancel bool
+	userActionMsg       string
 
 	titleStyle     lipgloss.Style
 	subtitleStyle  lipgloss.Style

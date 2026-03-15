@@ -6,7 +6,6 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
-	ltable "charm.land/lipgloss/v2/table"
 )
 
 func (m model) separator() string {
@@ -108,7 +107,9 @@ func (m model) overlayPopup(base, popup string) string {
 
 func (m model) View() tea.View {
 	content := m.renderMainView()
-	if m.detailOpen {
+	if m.userActionOpen {
+		content = m.overlayPopup(content, m.renderUserActionPopup())
+	} else if m.detailOpen {
 		content = m.overlayPopup(content, m.renderPopupBox())
 	}
 	v := tea.NewView(content)
@@ -266,14 +267,20 @@ func (m model) renderStatusBar(status, lastSync string) string {
 }
 
 func (m model) renderStatusHelp() string {
-	return "←/→ partition  s state  c cpu  m mem  g gpu  t detail  r refresh  q quit"
+	if m.userActionOpen {
+		return "Enter/y confirm  n/esc cancel  q quit"
+	}
+	if m.isUserTab() {
+		return "↑/↓ select  pgup/pgdn page  k cancel job  ←/→ tab  r refresh  q quit"
+	}
+	return "↑/↓ select node  s state  c cpu  m mem  g gpu  t detail  ←/→ tab  r refresh  q quit"
 }
 
 func (m model) renderUserOverview() string {
 	u := m.userSummary
 	var b strings.Builder
-	b.WriteString(m.subtitleStyle.Render(fmt.Sprintf("User: %s   Jobs: %d", defaultUserLabel(u.User), u.TotalJobs)))
-	b.WriteString("\n")
+	//b.WriteString(m.subtitleStyle.Render(fmt.Sprintf("User: %s   Jobs: %d", defaultUserLabel(u.User), u.TotalJobs)))
+	//b.WriteString("\n")
 	if len(u.StateCount) > 0 {
 		b.WriteString("States: " + renderStateSummary(u.StateCount))
 		b.WriteString("\n")
@@ -303,102 +310,15 @@ func (m model) renderUserOverview() string {
 		filesText := fmt.Sprintf("%d/%d (%d%%)", q.FilesUsed, q.FilesHard, filesPct)
 		b.WriteString(fmt.Sprintf("%s CAP %s %s  FILE %s %s", label, capBar, capText, filesBar, filesText))
 		if i < maxRows-1 {
-			b.WriteString("\n")
+			b.WriteString("\n\n")
 		}
 	}
 	return b.String()
 }
 
 func (m model) renderUserTables() string {
-	u := m.userSummary
-	w := m.width - 2
-	if w < 80 {
-		w = 80
-	}
-
-	buildStyle := func(row, col int, queueRows [][]string) lipgloss.Style {
-		if row == ltable.HeaderRow {
-			return lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(colorFgPrimary))
-		}
-		s := lipgloss.NewStyle().Foreground(lipgloss.Color(colorFgSecondary))
-		// ST column in squeue uses semantic color.
-		if len(queueRows) > row && row >= 0 && col == 4 {
-			state := queueRows[row][4]
-			s = s.Foreground(lipgloss.Color(stateColor(state))).Bold(true)
-		}
-		return s
-	}
-
-	queueHeaders := []string{"JOBID", "PARTITION", "NAME", "USER", "ST", "TIME", "NODES", "NODELIST(REASON)"}
-	queueRows := make([][]string, 0, len(u.Jobs))
-	for _, j := range u.Jobs {
-		queueRows = append(queueRows, []string{
-			j.JobID, j.Partition, j.Name, j.User, j.State, j.RunTime, j.Nodes, j.NodeList,
-		})
-	}
-	if len(queueRows) == 0 {
-		if u.QueueErr != "" {
-			queueRows = append(queueRows, []string{"-", "-", "-", "-", "ERR", "-", "-", u.QueueErr})
-		} else {
-			queueRows = append(queueRows, []string{"-", "-", "no jobs", defaultUserLabel(u.User), "-", "-", "-", "-"})
-		}
-	}
-	queueTable := ltable.New().
-		Border(lipgloss.NormalBorder()).
-		BorderStyle(lipgloss.NewStyle().Foreground(lipgloss.Color(colorSeparator))).
-		BorderColumn(true).
-		BorderRow(false).
-		Width(w).
-		Headers(queueHeaders...).
-		Rows(queueRows...).
-		StyleFunc(func(row, col int) lipgloss.Style { return buildStyle(row, col, queueRows) }).
-		String()
-
-	quotaTitle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(colorFgPrimary)).Render("SQUOTA")
-	quotaTable := ""
-	if u.QuotaErr != "" {
-		quotaTable = m.errorStyle.Render(u.QuotaErr)
-	} else {
-		quotaHeaders := []string{"ACCOUNT", "FS", "USED", "SOFT", "HARD", "FILES", "FSOFT", "FHARD"}
-		quotaRows := make([][]string, 0, len(u.QuotaEntries))
-		for _, q := range u.QuotaEntries {
-			quotaRows = append(quotaRows, []string{
-				q.Account,
-				q.Filesystem,
-				formatMemMB(q.UsedBytes),
-				formatMemMB(q.SoftBytes),
-				formatMemMB(q.HardBytes),
-				fmt.Sprintf("%d", q.FilesUsed),
-				fmt.Sprintf("%d", q.FilesSoft),
-				fmt.Sprintf("%d", q.FilesHard),
-			})
-		}
-		if len(quotaRows) == 0 {
-			quotaRows = append(quotaRows, []string{"-", "-", "-", "-", "-", "-", "-", "-"})
-		}
-		quotaTable = ltable.New().
-			Border(lipgloss.NormalBorder()).
-			BorderStyle(lipgloss.NewStyle().Foreground(lipgloss.Color(colorSeparator))).
-			BorderColumn(true).
-			BorderRow(false).
-			Width(w).
-			Headers(quotaHeaders...).
-			Rows(quotaRows...).
-			StyleFunc(func(row, _ int) lipgloss.Style {
-				if row == ltable.HeaderRow {
-					return lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(colorFgPrimary))
-				}
-				return lipgloss.NewStyle().Foreground(lipgloss.Color(colorFgSecondary))
-			}).
-			String()
-	}
-
-	return strings.Join([]string{
-		lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(colorFgPrimary)).Render("SQUEUE"),
-		queueTable,
-		quotaTitle,
-		quotaTable,
-	}, "\n")
+	title := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(colorFgPrimary)).Render("SQUEUE (List)")
+	return title + "\n" + m.userList.View()
 }
 
 func ratioFromInts(used, total int) float64 {
@@ -413,6 +333,31 @@ func ratioFromInts(used, total int) float64 {
 		return 1
 	}
 	return r
+}
+
+func (m model) renderUserActionPopup() string {
+	w := m.width
+	if w <= 0 {
+		w = 100
+	}
+	popupW := w / 2
+	if popupW < 54 {
+		popupW = 54
+	}
+	if popupW > 100 {
+		popupW = 100
+	}
+	bodyW := popupW - 6
+	if bodyW < 20 {
+		bodyW = 20
+	}
+	title := m.titleStyle.Render("User Action")
+	jobLine := m.mutedStyle.Render(fmt.Sprintf("job: %s  user: %s", m.userActionJob.JobID, m.userActionJob.User))
+	msg := lipgloss.NewStyle().Width(bodyW).Foreground(lipgloss.Color(colorFgPrimary)).Render(m.userActionMsg)
+	hint := m.mutedStyle.Render("Enter/y confirm  n/esc close")
+	popupSep := m.separatorStyle.Render(strings.Repeat("-", bodyW))
+	content := strings.Join([]string{title, jobLine, popupSep, msg, hint}, "\n")
+	return m.popupStyle.Width(popupW).Render(content)
 }
 
 func truncateToWidth(s string, width int) string {

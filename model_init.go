@@ -3,6 +3,7 @@ package main
 import (
 	"charm.land/bubbles/v2/help"
 	"charm.land/bubbles/v2/key"
+	"charm.land/bubbles/v2/list"
 	"charm.land/bubbles/v2/progress"
 	"charm.land/bubbles/v2/table"
 	"charm.land/lipgloss/v2"
@@ -34,6 +35,10 @@ func newModel(ds dataSource) model {
 			key.WithKeys("g"),
 			key.WithHelp("g", "sort gpu"),
 		),
+		UserCancel: key.NewBinding(
+			key.WithKeys("k"),
+			key.WithHelp("k", "cancel job"),
+		),
 		NodeDetail: key.NewBinding(
 			key.WithKeys("t"),
 			key.WithHelp("t", "node detail"),
@@ -59,9 +64,9 @@ func newModel(ds dataSource) model {
 		table.WithColumns([]table.Column{
 			{Title: "Node", Width: 24},
 			{Title: "State", Width: 14},
-			{Title: "CPU(A/T)", Width: 12},
+			{Title: "CPU(A/T)", Width: 16},
 			{Title: "MEM(A/T)", Width: 16},
-			{Title: "GPU(A/T)", Width: 14},
+			{Title: "GPU(A/T)", Width: 16},
 		}),
 		table.WithRows([]table.Row{}),
 		table.WithHeight(12),
@@ -76,6 +81,18 @@ func newModel(ds dataSource) model {
 		Foreground(lipgloss.Color(colorFgSecondary))
 	styles.Selected = styles.Cell
 	t.SetStyles(styles)
+
+	delegate := list.NewDefaultDelegate()
+	delegate.ShowDescription = true
+	userList := list.New([]list.Item{}, delegate, 80, 12)
+	userList.Title = ""
+	userList.SetShowHelp(false)
+	userList.SetShowStatusBar(true)
+	userList.SetFilteringEnabled(true)
+	userList.Styles.Title = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(colorFgPrimary))
+	userList.Styles.PaginationStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(colorFgMuted))
+	userList.Styles.StatusBar = lipgloss.NewStyle().Foreground(lipgloss.Color(colorFgMuted))
+	userList.Styles.NoItems = lipgloss.NewStyle().Foreground(lipgloss.Color(colorFgMuted))
 
 	cpuBar := progress.New(progress.WithColors(lipgloss.Color(colorProgressCPU)))
 	memBar := progress.New(progress.WithColors(lipgloss.Color(colorProgressMEM)))
@@ -93,6 +110,7 @@ func newModel(ds dataSource) model {
 	return model{
 		ds:          ds,
 		table:       t,
+		userList:    userList,
 		help:        h,
 		keys:        keys,
 		loading:     true,

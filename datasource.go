@@ -338,11 +338,7 @@ func fetchUserSummary(ctx context.Context) userSummary {
 	}
 
 	// squeue aggregation
-	squeueArgs := []string{"-h", "-o", "%i|%P|%j|%u|%t|%M|%D|%R"}
-	if user != "" {
-		squeueArgs = append([]string{"-u", user}, squeueArgs...)
-	}
-	sqOut, sqErr := runCommand(ctx, "squeue", squeueArgs...)
+	sqOut, sqErr := runCommand(ctx, "squeue", "-h", "-o", "%i|%P|%j|%u|%t|%M|%D|%R")
 	if sqErr != nil {
 		out.QueueErr = sqErr.Error()
 	} else {
@@ -393,17 +389,29 @@ func fetchUserSummary(ctx context.Context) userSummary {
 			if strings.EqualFold(fields[0], "account") {
 				continue
 			}
+			usedMB, idx, ok := parseQuotaSize(fields, 2)
+			if !ok || idx >= len(fields) {
+				continue
+			}
+			softMB, idx, ok := parseQuotaSize(fields, idx)
+			if !ok || idx >= len(fields) {
+				continue
+			}
+			hardMB, idx, ok := parseQuotaSize(fields, idx)
+			if !ok || idx+4 >= len(fields) {
+				continue
+			}
 			entry := quotaEntry{
 				Account:    fields[0],
 				Filesystem: fields[1],
-				UsedBytes:  parseMemToMB(fields[2] + fields[3]),
-				SoftBytes:  parseMemToMB(fields[4] + fields[5]),
-				HardBytes:  parseMemToMB(fields[6] + fields[7]),
-				GraceBytes: fields[8],
-				FilesUsed:  parseInt(fields[9]),
-				FilesSoft:  parseInt(fields[10]),
-				FilesHard:  parseInt(fields[11]),
-				GraceFiles: fields[12],
+				UsedBytes:  usedMB,
+				SoftBytes:  softMB,
+				HardBytes:  hardMB,
+				GraceBytes: fields[idx],
+				FilesUsed:  parseInt(fields[idx+1]),
+				FilesSoft:  parseInt(fields[idx+2]),
+				FilesHard:  parseInt(fields[idx+3]),
+				GraceFiles: fields[idx+4],
 			}
 			out.QuotaEntries = append(out.QuotaEntries, entry)
 			if len(out.QuotaEntries) >= 10 {
@@ -413,4 +421,35 @@ func fetchUserSummary(ctx context.Context) userSummary {
 	}
 
 	return out
+}
+
+func parseQuotaSize(fields []string, idx int) (valueMB int, next int, ok bool) {
+	if idx >= len(fields) {
+		return 0, idx, false
+	}
+	// Case 1: split tokens, e.g. "8.4" "GB"
+	if idx+1 < len(fields) {
+		unit := strings.ToUpper(strings.TrimSpace(fields[idx+1]))
+		if unit == "KB" || unit == "MB" || unit == "GB" || unit == "TB" {
+			return parseMemToMB(fields[idx] + unit[:1]), idx + 2, true
+		}
+	}
+
+	// Case 2: combined token, e.g. "8.4GB"
+	token := strings.TrimSpace(fields[idx])
+	if token == "" {
+		return 0, idx, false
+	}
+	if len(token) > 1 {
+		suffix := strings.ToUpper(token[len(token)-2:])
+		if suffix == "KB" || suffix == "MB" || suffix == "GB" || suffix == "TB" {
+			token = token[:len(token)-1] // drop trailing 'B', keep K/M/G/T
+		}
+	}
+	last := token[len(token)-1]
+	switch last {
+	case 'K', 'k', 'M', 'm', 'G', 'g', 'T', 't':
+		return parseMemToMB(token), idx + 1, true
+	}
+	return 0, idx, false
 }

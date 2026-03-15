@@ -45,3 +45,10 @@ func fetchNodeDetailCmd(node string) tea.Cmd {
 		}
 	}
 }
+
+func cancelJobCmd(jobID string) tea.Cmd {
+	return func() tea.Msg {
+		_, err := runCommand(context.Background(), "scancel", jobID)
+		return userCancelResultMsg{jobID: jobID, err: err}
+	}
+}

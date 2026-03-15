@@ -140,6 +140,7 @@ func (m *model) updateTableHeight() {
 	}
 	m.tableHeight = h
 	m.table.SetHeight(h)
+	m.userList.SetSize(maxInt(40, m.width-2), h)
 }
 
 func (m *model) selectedPartition() *partitionSummary {
@@ -179,6 +180,7 @@ func (m *model) refreshTableRows(resetCursor bool) {
 		m.visibleNodes = nil
 		m.table.SetRows([]table.Row{})
 		m.table.SetCursor(0)
+		m.refreshUserList(resetCursor)
 		return
 	}
 
@@ -238,6 +240,8 @@ func (m *model) switchTab(delta int) {
 	m.detailOpen = false
 	m.detailBusy = false
 	m.detailErr = nil
+	m.userActionOpen = false
+	m.userActionBusy = false
 	m.detailBody = ""
 	m.detailNode = ""
 	m.table.SetCursor(0)

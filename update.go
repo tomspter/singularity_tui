@@ -18,6 +18,26 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.updateTableHeight()
 		return m, nil
 	case tea.KeyPressMsg:
+		if m.userActionOpen {
+			switch msg.String() {
+			case "esc", "n":
+				m.userActionOpen = false
+				m.userActionBusy = false
+				return m, nil
+			case "enter", "y":
+				if m.userActionCanCancel && !m.userActionBusy {
+					m.userActionBusy = true
+					m.userActionMsg = "Running scancel ..."
+					return m, cancelJobCmd(m.userActionJob.JobID)
+				}
+				m.userActionOpen = false
+				m.userActionBusy = false
+				return m, nil
+			default:
+				return m, nil
+			}
+		}
+
 		if m.detailOpen {
 			switch {
 			case msg.String() == "t", msg.String() == "esc", key.Matches(msg, m.keys.NodeDetail):
@@ -63,6 +83,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.updateTableColumns()
 			m.refreshTableRows(true)
 			return m, nil
+		case key.Matches(msg, m.keys.UserCancel):
+			if m.isUserTab() {
+				m.openUserActionDialog()
+				return m, nil
+			}
+			return m, nil
 		case msg.String() == "t" || key.Matches(msg, m.keys.NodeDetail):
 			return m, m.toggleNodeDetail()
 		case key.Matches(msg, m.keys.ToggleHelp):
@@ -83,6 +109,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.lastErr = nil
 		m.partitions = msg.partitions
 		m.userSummary = msg.user
+		m.refreshUserList(true)
 		m.lastUpdated = msg.loadedAt
 		if prevIsUserTab {
 			m.activeTab = len(m.partitions)
@@ -129,8 +156,23 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.updateTableHeight()
 		return m, nil
+	case userCancelResultMsg:
+		m.userActionBusy = false
+		if msg.err != nil {
+			m.userActionCanCancel = false
+			m.userActionMsg = "scancel failed: " + msg.err.Error()
+			return m, nil
+		}
+		m.userActionCanCancel = false
+		m.userActionMsg = "scancel success."
+		m.loading = true
+		return m, fetchDataCmd(m.ds)
 	}
 
+	if m.isUserTab() {
+		m.userList, cmd = m.userList.Update(msg)
+		return m, cmd
+	}
 	m.table, cmd = m.table.Update(msg)
 	m.refreshTableRows(false)
 	return m, cmd
