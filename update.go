@@ -86,7 +86,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.refreshUserList(true)
 		m.lastUpdated = msg.loadedAt
 		if prevIsUserTab {
-			m.activeTab = len(m.partitions)
+			m.activeTab = 0
 		} else if prevPartitionName != "" {
 			found := -1
 			for i := range m.partitions {
@@ -96,14 +96,16 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 			if found >= 0 {
-				m.activeTab = found
-			} else if len(m.partitions) > 0 && m.activeTab >= len(m.partitions) {
-				m.activeTab = len(m.partitions) - 1
+				m.activeTab = found + 1 // tab 0 is User
+			} else if len(m.partitions) == 0 {
+				m.activeTab = 0
+			} else if m.activeTab > len(m.partitions) {
+				m.activeTab = len(m.partitions)
 			}
-		} else if len(m.partitions) > 0 && m.activeTab >= len(m.partitions) {
-			m.activeTab = len(m.partitions) - 1
 		} else if len(m.partitions) == 0 {
-			m.activeTab = 0 // User tab index when no partitions.
+			m.activeTab = 0
+		} else if m.activeTab > len(m.partitions) {
+			m.activeTab = len(m.partitions)
 		}
 		m.updateTableColumns()
 		m.refreshTableRows(true)

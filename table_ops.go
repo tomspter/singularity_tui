@@ -147,14 +147,15 @@ func (m *model) selectedPartition() *partitionSummary {
 	if m.isUserTab() {
 		return nil
 	}
-	if len(m.partitions) == 0 || m.activeTab < 0 || m.activeTab >= len(m.partitions) {
+	partitionIdx := m.activeTab - 1 // tab 0 is User
+	if len(m.partitions) == 0 || partitionIdx < 0 || partitionIdx >= len(m.partitions) {
 		return nil
 	}
-	return &m.partitions[m.activeTab]
+	return &m.partitions[partitionIdx]
 }
 
 func (m *model) isUserTab() bool {
-	return m.activeTab == len(m.partitions)
+	return m.activeTab == 0
 }
 
 func (m *model) tabCount() int {
@@ -199,36 +200,39 @@ func (m *model) refreshTableRows(resetCursor bool) {
 	nodes := append([]nodeInfo(nil), p.Nodes...)
 	sortNodes(nodes, m.sortMode)
 	m.visibleNodes = nodes
-
-	rows := make([]table.Row, 0, len(nodes))
-	for i, n := range nodes {
-		nodeCell := n.Name
-		if i == cursor {
-			nodeCell = lipgloss.NewStyle().
-				Foreground(lipgloss.Color(colorFgPrimary)).
-				Background(lipgloss.Color(colorSelectionBg)).
-				Bold(true).
-				Render(n.Name)
-		}
-		rows = append(rows, table.Row{
-			nodeCell,
-			renderStateCell(n.State),
-			m.formatCPUCell(n.CPUAlloc, n.CPUTotal),
-			m.formatMEMCell(n.MemAllocMB, n.MemTotalMB),
-			formatGPUCell(n.GPUAlloc, n.GPUTotal),
-		})
-	}
-	m.table.SetRows(m.normalizeRowsForTable(rows))
-	if len(rows) == 0 {
+	if len(nodes) == 0 {
+		m.table.SetRows([]table.Row{})
 		m.table.SetCursor(0)
 		return
 	}
 	if cursor < 0 {
 		cursor = 0
 	}
-	if cursor >= len(rows) {
-		cursor = len(rows) - 1
+	if cursor >= len(nodes) {
+		cursor = len(nodes) - 1
 	}
+
+	rows := make([]table.Row, 0, len(nodes))
+	for i, n := range nodes {
+		nodeCell := n.Name
+		stateCell := renderStateCell(n.State)
+		cpuCell := m.formatCPUCell(n.CPUAlloc, n.CPUTotal)
+		memCell := m.formatMEMCell(n.MemAllocMB, n.MemTotalMB)
+		gpuCell := formatGPUCell(n.GPUAlloc, n.GPUTotal)
+		if i == cursor {
+			// Keep a dot on selected row, but avoid ANSI color escapes so table
+			// selected background can cover the full row.
+			stateCell = "● " + strings.TrimSpace(n.State)
+		}
+		rows = append(rows, table.Row{
+			nodeCell,
+			stateCell,
+			cpuCell,
+			memCell,
+			gpuCell,
+		})
+	}
+	m.table.SetRows(m.normalizeRowsForTable(rows))
 	m.table.SetCursor(cursor)
 }
 

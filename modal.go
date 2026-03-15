@@ -68,7 +68,7 @@ func (m model) renderModal() string {
 		Render(m.modalTitle)
 
 	bodyStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color(colorFgSecondary)).
+		Foreground(lipgloss.Color(colorFgPrimary)).
 		Background(lipgloss.Color(colorPanel)).
 		Width(bodyW)
 	body := ""
@@ -155,13 +155,13 @@ func (m model) renderModalButtons(width int) string {
 
 	btnActive := lipgloss.NewStyle().
 		Bold(true).
-		Foreground(lipgloss.Color(colorPanel)).
+		Foreground(lipgloss.Color(colorFgPrimary)).
 		Background(lipgloss.Color(colorAccent)).
 		Padding(0, 2).
 		Align(lipgloss.Center)
 	btnIdle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color(colorFgSecondary)).
-		Background(lipgloss.Color(colorTNBrightBlack)).
+		Foreground(lipgloss.Color(colorFgPrimary)).
+		Background(lipgloss.Color(colorPanelAlt)).
 		Padding(0, 2).
 		Align(lipgloss.Center)
 

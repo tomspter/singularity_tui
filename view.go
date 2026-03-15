@@ -280,12 +280,6 @@ func (m model) renderStatusHelp() string {
 func (m model) renderUserOverview() string {
 	u := m.userSummary
 	var b strings.Builder
-	//b.WriteString(m.subtitleStyle.Render(fmt.Sprintf("User: %s   Jobs: %d", defaultUserLabel(u.User), u.TotalJobs)))
-	//b.WriteString("\n")
-	if len(u.StateCount) > 0 {
-		b.WriteString("States: " + renderStateSummary(u.StateCount))
-		b.WriteString("\n")
-	}
 	if u.QuotaErr != "" {
 		b.WriteString(m.errorStyle.Render("squota: " + u.QuotaErr))
 		return b.String()
@@ -298,18 +292,76 @@ func (m model) renderUserOverview() string {
 	if len(u.QuotaEntries) < maxRows {
 		maxRows = len(u.QuotaEntries)
 	}
+
+	labelW := 0
+	capTextW := 0
+	fileTextW := 0
 	for i := 0; i < maxRows; i++ {
 		q := u.QuotaEntries[i]
-		label := lipgloss.NewStyle().Foreground(lipgloss.Color(colorFgSecondary)).Width(18).Render(fmt.Sprintf("%s %s", q.Account, q.Filesystem))
+		label := fmt.Sprintf("%s %s", q.Account, q.Filesystem)
+		if w := lipgloss.Width(label); w > labelW {
+			labelW = w
+		}
 		capRatio := ratioFromInts(q.UsedBytes, q.HardBytes)
 		filesRatio := ratioFromInts(q.FilesUsed, q.FilesHard)
-		capBar := m.memBar.ViewAs(capRatio)
-		filesBar := m.cpuBar.ViewAs(filesRatio)
+		capText := fmt.Sprintf("%s/%s (%d%%)", formatMemMB(q.UsedBytes), formatMemMB(q.HardBytes), int(capRatio*100))
+		fileText := fmt.Sprintf("%d/%d (%d%%)", q.FilesUsed, q.FilesHard, int(filesRatio*100))
+		if w := lipgloss.Width(capText); w > capTextW {
+			capTextW = w
+		}
+		if w := lipgloss.Width(fileText); w > fileTextW {
+			fileTextW = w
+		}
+	}
+	if labelW < 18 {
+		labelW = 18
+	}
+
+	barW := 26
+	if m.width > 0 {
+		fixed := labelW + 2 + 3 + 1 + capTextW + 2 + 4 + 1 + fileTextW
+		spaceForBars := m.width - fixed - 6
+		if spaceForBars > 16 {
+			barW = spaceForBars / 2
+		}
+	}
+	if barW < 12 {
+		barW = 12
+	}
+	if barW > 36 {
+		barW = 36
+	}
+
+	labelStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(colorFgSecondary)).Width(labelW).Align(lipgloss.Left)
+	tagStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(colorFgPrimary))
+	capTextStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(colorFgPrimary)).Width(capTextW).Align(lipgloss.Right)
+	fileTextStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(colorFgPrimary)).Width(fileTextW).Align(lipgloss.Right)
+
+	for i := 0; i < maxRows; i++ {
+		q := u.QuotaEntries[i]
+		label := labelStyle.Render(fmt.Sprintf("%s %s", q.Account, q.Filesystem))
+		capRatio := ratioFromInts(q.UsedBytes, q.HardBytes)
+		filesRatio := ratioFromInts(q.FilesUsed, q.FilesHard)
+		capBarModel := m.memBar
+		capBarModel.SetWidth(barW)
+		filesBarModel := m.cpuBar
+		filesBarModel.SetWidth(barW)
+		capBar := capBarModel.ViewAs(capRatio)
+		filesBar := filesBarModel.ViewAs(filesRatio)
 		capPct := int(capRatio * 100)
 		filesPct := int(filesRatio * 100)
 		capText := fmt.Sprintf("%s/%s (%d%%)", formatMemMB(q.UsedBytes), formatMemMB(q.HardBytes), capPct)
 		filesText := fmt.Sprintf("%d/%d (%d%%)", q.FilesUsed, q.FilesHard, filesPct)
-		b.WriteString(fmt.Sprintf("%s CAP %s %s  FILE %s %s", label, capBar, capText, filesBar, filesText))
+		row := strings.Join([]string{
+			label,
+			tagStyle.Render("CAP"),
+			capBar,
+			capTextStyle.Render(capText),
+			tagStyle.Render("FILE"),
+			filesBar,
+			fileTextStyle.Render(filesText),
+		}, " ")
+		b.WriteString(row)
 		if i < maxRows-1 {
 			b.WriteString("\n\n")
 		}
@@ -318,8 +370,7 @@ func (m model) renderUserOverview() string {
 }
 
 func (m model) renderUserTables() string {
-	title := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(colorFgPrimary)).Render("SQUEUE (List)")
-	return title + "\n" + m.userList.View()
+	return m.userList.View()
 }
 
 func ratioFromInts(used, total int) float64 {
@@ -370,20 +421,23 @@ func minInt(a, b int) int {
 
 func (m model) renderTabs() string {
 	parts := make([]string, 0, len(m.partitions)+1)
+	userLabel := "User"
+	if m.activeTab == 0 {
+		parts = append(parts, m.activeTabStyle.Render(userLabel))
+	} else {
+		parts = append(parts, m.tabStyle.Render(userLabel))
+	}
+	if len(m.partitions) > 0 {
+		parts = append(parts, "  ")
+	}
 	for i, p := range m.partitions {
 		label := fmt.Sprintf("%s (%d)", p.Name, len(p.Nodes))
-		if i == m.activeTab {
+		tabIdx := i + 1 // tab 0 is User
+		if tabIdx == m.activeTab {
 			parts = append(parts, m.activeTabStyle.Render(label))
 		} else {
 			parts = append(parts, m.tabStyle.Render(label))
 		}
-	}
-	userIdx := len(m.partitions)
-	userLabel := "User"
-	if userIdx == m.activeTab {
-		parts = append(parts, m.activeTabStyle.Render(userLabel))
-	} else {
-		parts = append(parts, m.tabStyle.Render(userLabel))
 	}
 	if len(parts) == 0 {
 		return m.mutedStyle.Render("Tabs: -")

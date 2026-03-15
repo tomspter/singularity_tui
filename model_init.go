@@ -77,21 +77,33 @@ func newModel(ds dataSource) model {
 	styles.Header = styles.Header.
 		Bold(true).
 		Foreground(lipgloss.Color(colorFgPrimary))
-	styles.Cell = styles.Cell.
-		Foreground(lipgloss.Color(colorFgSecondary))
-	styles.Selected = styles.Cell
+	// Keep cell style padding-only; per-cell ANSI colors can reset row-level
+	// selected background in bubbles table rendering.
+	styles.Cell = styles.Cell
+	styles.Selected = lipgloss.NewStyle().
+		Foreground(lipgloss.Color(colorFgPrimary)).
+		Background(lipgloss.Color(colorSelectionBg)).
+		Bold(true)
 	t.SetStyles(styles)
 
-	delegate := list.NewDefaultDelegate()
-	delegate.ShowDescription = true
+	delegate := newUserJobDelegate()
 	userList := list.New([]list.Item{}, delegate, 80, 12)
-	userList.Title = ""
+	userList.Title = "SQUEUE · 0 jobs"
+	userList.SetStatusBarItemName("job", "jobs")
 	userList.SetShowHelp(false)
-	userList.SetShowStatusBar(true)
+	userList.SetShowStatusBar(false)
 	userList.SetFilteringEnabled(true)
-	userList.Styles.Title = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(colorFgPrimary))
+	userList.SetShowPagination(false)
+	userList.Styles.TitleBar = lipgloss.NewStyle().Padding(0, 0, 1, 2)
+	userList.Styles.Title = lipgloss.NewStyle().
+		Bold(true).
+		Foreground(lipgloss.Color(colorFgPrimary))
 	userList.Styles.PaginationStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(colorFgMuted))
-	userList.Styles.StatusBar = lipgloss.NewStyle().Foreground(lipgloss.Color(colorFgMuted))
+	userList.Styles.StatusBar = lipgloss.NewStyle().
+		Foreground(lipgloss.Color(colorFgMuted)).
+		Padding(0, 0, 1, 2)
+	userList.Styles.StatusEmpty = lipgloss.NewStyle().
+		Foreground(lipgloss.Color(colorFgMuted))
 	userList.Styles.NoItems = lipgloss.NewStyle().Foreground(lipgloss.Color(colorFgMuted))
 
 	cpuBar := progress.New(progress.WithColors(lipgloss.Color(colorProgressCPU)))
