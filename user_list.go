@@ -31,38 +31,36 @@ type userJobDelegate struct {
 	idStyle       lipgloss.Style
 	nameStyle     lipgloss.Style
 	subtleStyle   lipgloss.Style
+	subtleSel     lipgloss.Style
 	timeStyle     lipgloss.Style
 	nodeCount     lipgloss.Style
 	nodeListStyle lipgloss.Style
-	selectedBg    lipgloss.Style
-	indicatorOn   string
-	indicatorOff  string
+	selectedLine  lipgloss.Style
+	indicatorOn   lipgloss.Style
+	indicatorOff  lipgloss.Style
 	stateBadge    lipgloss.Style
 	partBadge     lipgloss.Style
 }
 
-func newUserJobDelegate() userJobDelegate {
+func newUserJobDelegate(ui uiStyleSet) userJobDelegate {
 	return userJobDelegate{
-		idStyle:       lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(colorTNOrange)),
-		nameStyle:     lipgloss.NewStyle().Foreground(lipgloss.Color(colorFgPrimary)),
-		subtleStyle:   lipgloss.NewStyle().Foreground(lipgloss.Color(colorFgSecondary)),
-		timeStyle:     lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(colorTNOrange)),
-		nodeCount:     lipgloss.NewStyle().Foreground(lipgloss.Color(colorTNMagenta)),
-		nodeListStyle: lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(colorTNCyan)),
-		selectedBg:    lipgloss.NewStyle().Background(lipgloss.Color(colorTNBrightBlack)),
-		indicatorOn:   lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(colorAccent)).Render(">"),
-		indicatorOff:  " ",
-		stateBadge: lipgloss.NewStyle().
-			Bold(true).
-			Foreground(lipgloss.Color(colorFgSecondary)),
-		partBadge: lipgloss.NewStyle().
-			Foreground(lipgloss.Color(colorFgSecondary)).
-			Faint(true),
+		idStyle:       ui.UserJobID,
+		nameStyle:     ui.UserJobName,
+		subtleStyle:   ui.UserMeta,
+		subtleSel:     ui.UserMetaSelected,
+		timeStyle:     ui.UserMetaTime,
+		nodeCount:     ui.UserMetaNodes,
+		nodeListStyle: ui.UserNodeList,
+		selectedLine:  ui.UserSelectedLine,
+		indicatorOn:   ui.UserIndicatorOn,
+		indicatorOff:  ui.UserIndicatorOff,
+		stateBadge:    ui.UserStateBadge,
+		partBadge:     ui.UserPartBadge,
 	}
 }
 
 func (d userJobDelegate) Height() int  { return 2 }
-func (d userJobDelegate) Spacing() int { return 0 }
+func (d userJobDelegate) Spacing() int { return 1 }
 func (d userJobDelegate) Update(tea.Msg, *list.Model) tea.Cmd {
 	return nil
 }
@@ -74,14 +72,9 @@ func (d userJobDelegate) Render(w io.Writer, m list.Model, index int, item list.
 	}
 	job := v.job
 	selected := index == m.Index() && m.FilterState() != list.Filtering
-
-	indicator := d.indicatorOff
-	if selected {
-		indicator = d.indicatorOn
-	}
-
 	totalW := m.Width()
-	contentW := totalW - 2 // indicator + gap
+	indicatorW := 2
+	contentW := totalW - indicatorW
 	if contentW < 20 {
 		contentW = 20
 	}
@@ -106,64 +99,35 @@ func (d userJobDelegate) Render(w io.Writer, m list.Model, index int, item list.
 	}
 
 	stateRaw := "[" + state + "]"
-	partRaw := "[" + partition + "]"
-	rightRaw := stateRaw + " " + partRaw
-	rightW := lipgloss.Width(rightRaw)
+	stateW := 6
 
 	nameRaw := strings.TrimSpace(job.Name)
 	if nameRaw == "" {
 		nameRaw = "-"
 	}
-	nameW := contentW - idW - rightW - 4
+	nameW := contentW - stateW - idW - 4
 	if nameW < 4 {
-		rightRaw = stateRaw
-		rightW = lipgloss.Width(rightRaw)
-		nameW = contentW - idW - rightW - 4
-	}
-	if nameW < 4 {
-		rightRaw = ""
-		rightW = 0
 		nameW = contentW - idW - 2
 	}
 	if nameW < 1 {
 		nameW = 1
 	}
 
-	idVal := d.idStyle.Width(idW).Render(shortenField(job.JobID, idW))
+	stateVal := d.stateBadge.Foreground(lipgloss.Color(jobStateColor(state))).Width(stateW).MaxWidth(stateW).Align(lipgloss.Left).Render(truncateToWidth(stateRaw, stateW))
+	idVal := d.idStyle.Width(idW).MaxWidth(idW).Align(lipgloss.Left).Render(shortenField(job.JobID, idW))
 	nameTrimmed := truncateToWidth(nameRaw, nameW)
 	nameVal := d.nameStyle.Render(nameTrimmed)
-	line1Content := idVal + "  " + nameVal
-	if rightRaw != "" {
-		rightVal := d.stateBadge.Render(stateRaw)
-		if strings.Contains(rightRaw, partRaw) {
-			rightVal += " " + d.partBadge.Render(partRaw)
-		}
-		line1Content += "  " + rightVal
-	}
+	line1Content := lipgloss.JoinHorizontal(lipgloss.Top, stateVal, "  ", idVal, "  ", nameVal)
 	line1Content = padToDisplayWidth(line1Content, contentW)
-	firstLine := indicator + " " + line1Content
+	firstLine := line1Content
+	indicator := d.indicatorOff.Render(" ")
 	if selected {
-		plain := shortenField(job.JobID, idW) + "  " + nameTrimmed
-		if rightRaw != "" {
-			plain += "  " + rightRaw
-		}
-		plain = truncateToWidth(plain, contentW)
-		plain = padToDisplayWidth(plain, contentW)
-		firstLine = lipgloss.NewStyle().
-			Bold(true).
-			Foreground(lipgloss.Color(colorFgPrimary)).
-			Background(lipgloss.Color(colorTNBrightBlack)).
-			Width(totalW).
-			Render("> " + plain)
-	}
-
-	nodesRaw := strings.TrimSpace(job.Nodes)
-	if nodesRaw == "" {
-		nodesRaw = "0"
-	}
-	nodeLabel := "node"
-	if nodesRaw != "1" {
-		nodeLabel = "nodes"
+		idSel := d.idStyle.Width(idW).MaxWidth(idW).Align(lipgloss.Left).Render(shortenField(job.JobID, idW))
+		nameSel := d.nameStyle.Foreground(lipgloss.Color(colorTNBrightWhite)).Render(nameTrimmed)
+		stateSel := d.stateBadge.Foreground(lipgloss.Color(jobStateColor(state))).Width(stateW).MaxWidth(stateW).Align(lipgloss.Left).Render(truncateToWidth(stateRaw, stateW))
+		line1Sel := lipgloss.JoinHorizontal(lipgloss.Top, stateSel, "  ", idSel, "  ", nameSel)
+		firstLine = d.selectedLine.Width(contentW).Render(padToDisplayWidth(line1Sel, contentW))
+		indicator = d.indicatorOn.Render("│")
 	}
 	userRaw := strings.TrimSpace(job.User)
 	if userRaw == "" {
@@ -173,36 +137,48 @@ func (d userJobDelegate) Render(w io.Writer, m list.Model, index int, item list.
 	if timeRaw == "" {
 		timeRaw = "-"
 	}
-	nodesRaw = nodesRaw + " " + nodeLabel
 
-	leftMetaRaw := fmt.Sprintf("%s  %s  %s", userRaw, timeRaw, nodesRaw)
 	nodelistRaw := strings.TrimSpace(job.NodeList)
 	if nodelistRaw == "" {
 		nodelistRaw = "-"
 	}
 
-	left2Max := (contentW * 2) / 3
-	if left2Max < 16 {
-		left2Max = 16
+	userW := 12
+	timeW := 10
+	partW := 8
+	minNodeListW := 8
+	if contentW < userW+timeW+partW+minNodeListW+6 {
+		userW = 10
+		timeW = 9
+		partW = 7
 	}
-	if left2Max > contentW-8 {
-		left2Max = contentW - 8
+	if contentW < userW+timeW+partW+minNodeListW+6 {
+		userW = 8
+		timeW = 8
+		partW = 6
 	}
-	left2 := d.subtleStyle.Render(shortenField(leftMetaRaw, left2Max))
-	left2W := lipgloss.Width(left2)
-	nodeAvail := contentW - left2W - 2
-
-	if nodeAvail < 8 {
-		line2Raw := shortenField(leftMetaRaw+"  "+nodelistRaw, contentW)
-		line2Content := d.subtleStyle.Render(line2Raw)
-		_, _ = fmt.Fprintf(w, "%s\n%s   %s", firstLine, d.indicatorOff, line2Content)
-		return
+	nodelistW := contentW - userW - timeW - partW - 6
+	if nodelistW < minNodeListW {
+		nodelistW = minNodeListW
 	}
+	metaStyle := d.partBadge
+	if selected {
+		metaStyle = d.partBadge.Foreground(lipgloss.Color(colorTNBrightWhite))
+	}
+	userCell := metaStyle.Width(userW).MaxWidth(userW).Align(lipgloss.Left).Render(shortenField(userRaw, userW))
+	timeCell := metaStyle.Width(timeW).MaxWidth(timeW).Align(lipgloss.Left).Render(shortenField(timeRaw, timeW))
+	partCell := metaStyle.Width(partW).MaxWidth(partW).Align(lipgloss.Left).Render(shortenField(partition, partW))
+	nodeCell := metaStyle.Width(nodelistW).MaxWidth(nodelistW).Align(lipgloss.Left).Render(shortenField(nodelistRaw, nodelistW))
+	line2Content := lipgloss.JoinHorizontal(lipgloss.Top, userCell, "  ", timeCell, "  ", partCell, "  ", nodeCell)
+	line2Content = padToDisplayWidth(line2Content, contentW)
 
-	right2 := d.nodeListStyle.Render(shortenField(nodelistRaw, nodeAvail))
-	line2Content := padToDisplayWidth(left2+"  "+right2, contentW)
-
-	_, _ = fmt.Fprintf(w, "%s\n%s   %s", firstLine, d.indicatorOff, line2Content)
+	firstLineWithIndicator := lipgloss.JoinHorizontal(lipgloss.Top, indicator, " ", firstLine)
+	secondIndicator := d.indicatorOff.Render(" ")
+	if selected {
+		secondIndicator = d.indicatorOn.Render("│")
+	}
+	secondLineWithIndicator := lipgloss.JoinHorizontal(lipgloss.Top, secondIndicator, " ", line2Content)
+	_, _ = fmt.Fprintf(w, "%s\n%s", firstLineWithIndicator, secondLineWithIndicator)
 }
 
 func (m *model) refreshUserList(reset bool) {

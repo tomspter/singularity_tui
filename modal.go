@@ -34,6 +34,9 @@ func (m *model) closeModal() {
 	m.modalRawOpen = false
 	m.modalRawOff = 0
 	m.userActionJob = userJob{}
+	m.srunForm = nil
+	m.srunFormCfg = nodeSrunFormConfig{}
+	m.srunCommand = ""
 }
 
 func (m *model) setModalBody(body string) {
@@ -59,89 +62,50 @@ func (m model) renderModal() string {
 		bodyW = 20
 	}
 
-	title := lipgloss.NewStyle().
-		Bold(true).
-		Foreground(lipgloss.Color(colorFgPrimary)).
-		Background(lipgloss.Color(colorPanel)).
-		Align(lipgloss.Center).
-		Width(bodyW).
-		Render(m.modalTitle)
+	title := m.ui.ModalTitle.Width(bodyW).Render(m.modalTitle)
+	if m.modalKind == modalNodeSrun && m.srunForm != nil {
+		formW := bodyW
+		if formW < 52 {
+			formW = 52
+		}
+		m.srunForm.WithWidth(formW)
+		formView := strings.TrimSpace(m.srunForm.View())
+		if formView == "" {
+			formView = "-"
+		}
+		body := m.ui.ModalBodyLeft.Width(bodyW).Render(formView)
+		hint := m.ui.ModalRawMeta.Width(bodyW).Render("Enter next/submit  Tab next field  Esc close")
+		content := lipgloss.JoinVertical(lipgloss.Left, title, "", body, "", hint)
+		return m.ui.ModalBox.Width(popupW).Render(content)
+	}
 
-	bodyStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color(colorFgPrimary)).
-		Background(lipgloss.Color(colorPanel)).
-		Width(bodyW)
+	bodyStyle := m.ui.ModalBodyLeft.Width(bodyW)
 	body := ""
 	if m.modalKind == modalNodeDetail {
-		body = bodyStyle.Align(lipgloss.Left).Render(strings.TrimSpace(m.modalBody))
+		body = bodyStyle.Render(strings.TrimSpace(m.modalBody))
 	} else {
-		body = bodyStyle.Align(lipgloss.Center).Render(strings.TrimSpace(m.modalBody))
+		body = m.ui.ModalBodyCenter.Width(bodyW).Render(strings.TrimSpace(m.modalBody))
 	}
 
 	buttons := m.renderModalButtons(bodyW)
 	if m.modalKind == modalNodeDetail && m.modalRawOpen {
-		rawHeader := lipgloss.NewStyle().
-			Bold(true).
-			Foreground(lipgloss.Color(colorFgPrimary)).
-			Render("Raw Output")
+		rawHeader := m.ui.ModalRawHeader.Render("Raw Output")
 		rawBodyText, rawMeta := m.renderRawOutputWindow(rawWindowHeight)
-		rawBody := lipgloss.NewStyle().
-			Foreground(lipgloss.Color(colorFgMuted)).
-			Background(lipgloss.Color(colorPanel)).
-			Width(bodyW).
-			Align(lipgloss.Left).
-			Render(rawBodyText)
-		rawInfo := lipgloss.NewStyle().
-			Foreground(lipgloss.Color(colorFgMuted)).
-			Background(lipgloss.Color(colorPanel)).
-			Width(bodyW).
-			Align(lipgloss.Right).
-			Render(rawMeta)
-		rawBox := lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color(colorSeparator)).
-			Background(lipgloss.Color(colorPanel)).
-			Padding(0, 1).
-			Width(bodyW).
-			Render(rawHeader + "\n" + rawBody + "\n" + rawInfo)
-		content := strings.Join([]string{
-			title,
-			"",
-			body,
-			"",
-			rawBox,
-			"",
-			buttons,
-		}, "\n")
-		return lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color(colorAccent)).
-			Background(lipgloss.Color(colorPanel)).
-			Padding(1, 2).
-			Width(popupW).
-			Render(content)
+		rawBody := m.ui.ModalRawBody.Width(bodyW).Render(rawBodyText)
+		rawInfo := m.ui.ModalRawMeta.Width(bodyW).Render(rawMeta)
+		rawBox := m.ui.ModalRawBox.Width(bodyW).Render(lipgloss.JoinVertical(lipgloss.Left, rawHeader, rawBody, rawInfo))
+		content := lipgloss.JoinVertical(lipgloss.Left, title, "", body, "", rawBox, "", buttons)
+		return m.ui.ModalBox.Width(popupW).Render(content)
 	}
 
-	content := strings.Join([]string{
-		title,
-		"",
-		body,
-		"",
-		buttons,
-	}, "\n")
-
-	box := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(lipgloss.Color(colorAccent)).
-		Background(lipgloss.Color(colorPanel)).
-		Padding(1, 2).
-		Width(popupW).
-		Render(content)
-
-	return box
+	content := lipgloss.JoinVertical(lipgloss.Left, title, "", body, "", buttons)
+	return m.ui.ModalBox.Width(popupW).Render(content)
 }
 
 func (m model) renderModalButtons(width int) string {
+	if len(m.modalButtons) == 0 {
+		return ""
+	}
 	maxLabelW := 0
 	for _, b := range m.modalButtons {
 		lbl := strings.ReplaceAll(b.Label, "\n", " ")
@@ -153,18 +117,6 @@ func (m model) renderModalButtons(width int) string {
 		maxLabelW = 5
 	}
 
-	btnActive := lipgloss.NewStyle().
-		Bold(true).
-		Foreground(lipgloss.Color(colorFgPrimary)).
-		Background(lipgloss.Color(colorAccent)).
-		Padding(0, 2).
-		Align(lipgloss.Center)
-	btnIdle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color(colorFgPrimary)).
-		Background(lipgloss.Color(colorPanelAlt)).
-		Padding(0, 2).
-		Align(lipgloss.Center)
-
 	parts := make([]string, 0, len(m.modalButtons))
 	for i, b := range m.modalButtons {
 		label := strings.ReplaceAll(b.Label, "\n", " ")
@@ -173,28 +125,16 @@ func (m model) renderModalButtons(width int) string {
 		}
 		label = centerText(label, maxLabelW)
 		if i == m.modalFocus {
-			parts = append(parts, btnActive.Render(label))
+			parts = append(parts, m.ui.ModalBtnActive.Render(label))
 		} else {
-			parts = append(parts, btnIdle.Render(label))
+			parts = append(parts, m.ui.ModalBtnIdle.Render(label))
 		}
 	}
-	row := ""
-	for i, p := range parts {
-		if i > 0 {
-			row += "   "
-		}
-		row += p
-	}
-	row = lipgloss.NewStyle().Padding(0, 1).Render(row)
+	row := lipgloss.NewStyle().Padding(0, 1).Render(strings.Join(parts, "   "))
 	if width <= 0 {
 		width = lipgloss.Width(row)
 	}
-	return lipgloss.NewStyle().
-		Background(lipgloss.Color(colorPanel)).
-		Width(width).
-		Align(lipgloss.Center).
-		PaddingTop(1).
-		Render(row)
+	return m.ui.ModalBtnWrap.Width(width).Render(row)
 }
 
 func centerText(s string, width int) string {
@@ -210,6 +150,13 @@ func centerText(s string, width int) string {
 func (m *model) updateModal(msg tea.KeyPressMsg) tea.Cmd {
 	if !m.modalOpen {
 		return nil
+	}
+	if m.modalKind == modalNodeSrun && m.srunForm != nil {
+		if msg.String() == "esc" {
+			m.closeModal()
+			return nil
+		}
+		return m.updateNodeSrunForm(msg)
 	}
 	if m.modalBusy {
 		if msg.String() == "esc" {

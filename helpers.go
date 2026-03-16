@@ -43,9 +43,12 @@ func renderStateLabel(state string) string {
 }
 
 func renderStateCell(state string) string {
-	bullet := lipgloss.NewStyle().Foreground(lipgloss.Color(stateColor(state))).Render("●")
-	text := lipgloss.NewStyle().Foreground(lipgloss.Color(colorFgPrimary)).Render(" " + state)
-	return bullet + text
+	s := strings.TrimSpace(state)
+	if s == "" {
+		s = "-"
+	}
+	cellStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(stateColor(s)))
+	return cellStyle.Render("● " + s)
 }
 
 func shortBlockBar(alloc, total, width int) string {
@@ -96,6 +99,31 @@ func stateColor(state string) string {
 		return colorStateDrain
 	default:
 		return colorStateDefault
+	}
+}
+
+func jobStateColor(state string) string {
+	s := strings.ToUpper(strings.TrimSpace(state))
+	if s == "" {
+		return colorFgSecondary
+	}
+	switch s {
+	case "R", "RUNNING":
+		return colorTNGreen
+	case "CD", "COMPLETED":
+		return colorTNGreen
+	case "PD", "PENDING", "CF", "CONFIGURING":
+		return colorTNYellow
+	case "CG", "COMPLETING":
+		return colorTNBlue
+	case "S", "SUSPENDED", "ST", "STOPPED":
+		return colorTNMagenta
+	case "CA", "CANCELLED", "F", "FAILED", "NF", "NODE_FAIL", "BF", "BOOT_FAIL", "TO", "TIMEOUT", "OOM", "OUT_OF_MEMORY", "DL", "DEADLINE", "SE", "SPECIAL_EXIT":
+		return colorTNRed
+	case "PR", "PREEMPTED", "RS", "RESIZING", "RQ", "REQUEUED":
+		return colorTNOrange
+	default:
+		return colorFgSecondary
 	}
 }
 

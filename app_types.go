@@ -9,6 +9,7 @@ import (
 	"charm.land/bubbles/v2/list"
 	"charm.land/bubbles/v2/progress"
 	"charm.land/bubbles/v2/table"
+	huh "charm.land/huh/v2"
 	"charm.land/lipgloss/v2"
 )
 
@@ -119,6 +120,19 @@ type quotaEntry struct {
 	GraceFiles string
 }
 
+type nodeSrunFormConfig struct {
+	Partition string
+	Node      string
+	JobName   string
+	CPUs      string
+	Memory    string
+	GPUs      string
+	TimeLimit string
+	WorkDir   string
+	ExtraArgs string
+	Command   string
+}
+
 type keyMap struct {
 	PrevPartition key.Binding
 	NextPartition key.Binding
@@ -160,6 +174,7 @@ const (
 	modalNone modalKind = iota
 	modalNodeDetail
 	modalUserAction
+	modalNodeSrun
 )
 
 type modalAction int
@@ -214,6 +229,10 @@ type model struct {
 	modalBusy     bool
 	modalRawOpen  bool
 	modalRawOff   int
+	srunForm      *huh.Form
+	srunFormCfg   nodeSrunFormConfig
+	srunCommand   string
+	ui            uiStyleSet
 
 	titleStyle     lipgloss.Style
 	subtitleStyle  lipgloss.Style

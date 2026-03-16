@@ -84,10 +84,7 @@ func (m model) overlayPopup(base, popup string) string {
 	// Base frame.
 	frame := lipgloss.Place(w, h, lipgloss.Left, lipgloss.Top, base)
 	// Lipgloss mask: dim and mute everything behind the popup.
-	masked := lipgloss.NewStyle().
-		Foreground(lipgloss.Color(colorMaskFg)).
-		Faint(true).
-		Render(frame)
+	masked := m.ui.OverlayMask.Render(frame)
 
 	pw := lipgloss.Width(popup)
 	ph := lipgloss.Height(popup)
@@ -116,11 +113,6 @@ func (m model) View() tea.View {
 }
 
 func (m model) renderMainView() string {
-	var b strings.Builder
-
-	//b.WriteString(m.titleStyle.Render("Slurm Visual TUI"))
-	//b.WriteString("\n")
-
 	status := "loading..."
 	if m.lastErr != nil {
 		status = "error"
@@ -131,47 +123,34 @@ func (m model) renderMainView() string {
 	if !m.lastUpdated.IsZero() {
 		lastSync = m.lastUpdated.Format("2006-01-02 15:04:05")
 	}
-	//b.WriteString(m.separator())
-	//b.WriteString("\n")
-
-	b.WriteString(m.renderTabs())
-	b.WriteString("\n")
+	sections := []string{m.renderTabs(), ""}
 
 	p := m.selectedPartition()
-	b.WriteString("\n")
 	if m.lastErr != nil {
-		b.WriteString(m.errorStyle.Render("Error: " + m.lastErr.Error()))
-		b.WriteString("\n")
+		sections = append(sections, m.errorStyle.Render("Error: "+m.lastErr.Error()))
 	} else if m.isUserTab() {
-		b.WriteString(m.renderUserOverview())
-		b.WriteString("\n")
-		b.WriteString(m.separator())
-		b.WriteString("\n")
-		b.WriteString(m.renderUserTables())
-		b.WriteString("\n")
-		b.WriteString(m.renderStatusBar(status, lastSync))
-		return b.String()
+		sections = append(sections,
+			m.renderUserOverview(),
+			m.separator(),
+			m.renderUserTables(),
+			m.renderStatusBar(status, lastSync),
+		)
+		return lipgloss.JoinVertical(lipgloss.Left, sections...)
 	} else if p == nil {
-		b.WriteString(m.mutedStyle.Render("No partition data from sinfo."))
-		b.WriteString("\n")
+		sections = append(sections, m.mutedStyle.Render("No partition data from sinfo."))
 	} else {
-		b.WriteString(m.renderUsageLine("CPU", p.CPUAlloc, p.CPUTotal, false))
-		b.WriteString("\n\n")
-		b.WriteString(m.renderUsageLine("MEM", p.MemAllocMB, p.MemTotalMB, true))
-		b.WriteString("\n\n")
-		b.WriteString(m.renderUsageLine("GPU", p.GPUAlloc, p.GPUTotal, false))
-		b.WriteString("\n\n")
-		b.WriteString("States: " + renderStateSummary(p.StateCount))
-		b.WriteString("\n")
+		sections = append(sections,
+			m.renderUsageLine("CPU", p.CPUAlloc, p.CPUTotal, false),
+			"",
+			m.renderUsageLine("MEM", p.MemAllocMB, p.MemTotalMB, true),
+			"",
+			m.renderUsageLine("GPU", p.GPUAlloc, p.GPUTotal, false),
+			"",
+			"States: "+renderStateSummary(p.StateCount),
+		)
 	}
-	b.WriteString(m.separator())
-	b.WriteString("\n")
-
-	b.WriteString(m.table.View())
-	b.WriteString("\n")
-	b.WriteString(m.renderStatusBar(status, lastSync))
-
-	return b.String()
+	sections = append(sections, m.separator(), m.table.View(), m.renderStatusBar(status, lastSync))
+	return lipgloss.JoinVertical(lipgloss.Left, sections...)
 }
 
 func (m model) renderStatusBar(status, lastSync string) string {
@@ -228,38 +207,14 @@ func (m model) renderStatusBar(status, lastSync string) string {
 	rightText = truncateToWidth(rightText, rightW)
 	centerText = truncateToWidth(centerText, centerW)
 
-	leftStyle := lipgloss.NewStyle().
-		Bold(true).
-		Padding(0, 1).
-		Background(lipgloss.Color(colorTNBrightBlack)).
-		Foreground(lipgloss.Color(colorFgPrimary))
-	switch strings.ToLower(status) {
-	case "ready":
-		leftStyle = leftStyle.Foreground(lipgloss.Color(colorStateIdle))
-	case "loading...":
-		leftStyle = leftStyle.Foreground(lipgloss.Color(colorStateMixed))
-	case "error":
-		leftStyle = leftStyle.Foreground(lipgloss.Color(colorStateDrain))
-	}
-	left := leftStyle.Render(leftText)
-
-	right := lipgloss.NewStyle().
-		Bold(true).
-		Foreground(lipgloss.Color(colorFgSecondary)).
-		Background(lipgloss.Color(colorTNBrightBlack)).
-		Padding(0, 1).
-		Render(rightText)
+	left := m.ui.statusLeft(status).Render(leftText)
+	right := m.ui.StatusRight.Render(rightText)
 
 	fillWidth := w - lipgloss.Width(left) - lipgloss.Width(right)
 	if fillWidth < 0 {
 		fillWidth = 0
 	}
-	center := lipgloss.NewStyle().
-		Background(lipgloss.Color(colorPanel)).
-		Foreground(lipgloss.Color(colorFgMuted)).
-		Width(fillWidth).
-		Align(lipgloss.Center).
-		Render(centerText)
+	center := m.ui.StatusCenter.Width(fillWidth).Render(centerText)
 
 	return lipgloss.JoinHorizontal(lipgloss.Top, left, center, right)
 }
@@ -269,12 +224,15 @@ func (m model) renderStatusHelp() string {
 		if m.modalKind == modalNodeDetail {
 			return "r raw on/off  ↑/↓ or j/k scroll raw  ←/→ button  Enter select  esc close"
 		}
+		if m.modalKind == modalNodeSrun && m.srunForm != nil {
+			return "Tab next field  Shift+Tab prev field  Enter next/submit  esc close  q quit"
+		}
 		return "←/→ focus button  Enter/y select  n/esc close  q quit"
 	}
 	if m.isUserTab() {
 		return "↑/↓ select  pgup/pgdn page  k cancel job  ←/→ tab  r refresh  q quit"
 	}
-	return "↑/↓ select node  s state  c cpu  m mem  g gpu  t detail  ←/→ tab  r refresh  q quit"
+	return "↑/↓ select node  Enter srun form  t detail  s state  c cpu  m mem  g gpu  ←/→ tab  r refresh  q quit"
 }
 
 func (m model) renderUserOverview() string {
@@ -332,10 +290,10 @@ func (m model) renderUserOverview() string {
 		barW = 36
 	}
 
-	labelStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(colorFgSecondary)).Width(labelW).Align(lipgloss.Left)
-	tagStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(colorFgPrimary))
-	capTextStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(colorFgPrimary)).Width(capTextW).Align(lipgloss.Right)
-	fileTextStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(colorFgPrimary)).Width(fileTextW).Align(lipgloss.Right)
+	labelStyle := m.ui.QuotaLabel.Width(labelW)
+	tagStyle := m.ui.QuotaTag
+	capTextStyle := m.ui.QuotaValue.Width(capTextW)
+	fileTextStyle := m.ui.QuotaValue.Width(fileTextW)
 
 	for i := 0; i < maxRows; i++ {
 		q := u.QuotaEntries[i]

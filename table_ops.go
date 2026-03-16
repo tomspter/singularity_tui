@@ -213,27 +213,39 @@ func (m *model) refreshTableRows(resetCursor bool) {
 	}
 
 	rows := make([]table.Row, 0, len(nodes))
-	for i, n := range nodes {
-		nodeCell := n.Name
-		stateCell := renderStateCell(n.State)
-		cpuCell := m.formatCPUCell(n.CPUAlloc, n.CPUTotal)
-		memCell := m.formatMEMCell(n.MemAllocMB, n.MemTotalMB)
-		gpuCell := formatGPUCell(n.GPUAlloc, n.GPUTotal)
-		if i == cursor {
-			// Keep a dot on selected row, but avoid ANSI color escapes so table
-			// selected background can cover the full row.
-			stateCell = "● " + strings.TrimSpace(n.State)
-		}
+	cols := m.table.Columns()
+	for _, n := range nodes {
 		rows = append(rows, table.Row{
-			nodeCell,
-			stateCell,
-			cpuCell,
-			memCell,
-			gpuCell,
+			n.Name,
+			renderStateCell(n.State),
+			m.formatCPUCell(n.CPUAlloc, n.CPUTotal),
+			m.formatMEMCell(n.MemAllocMB, n.MemTotalMB),
+			formatGPUCell(n.GPUAlloc, n.GPUTotal),
 		})
+	}
+	if cursor >= 0 && cursor < len(rows) {
+		rows[cursor] = m.renderSelectedRowCells(rows[cursor], cols, nodes[cursor])
 	}
 	m.table.SetRows(m.normalizeRowsForTable(rows))
 	m.table.SetCursor(cursor)
+}
+
+func (m *model) renderSelectedRowCells(row table.Row, cols []table.Column, n nodeInfo) table.Row {
+	selected := make(table.Row, len(row))
+	copy(selected, row)
+	for i := range selected {
+		width := 0
+		if i < len(cols) {
+			width = cols[i].Width
+		}
+		switch i {
+		case 1:
+			selected[i] = m.ui.selectedTableStateCell(n.State, width)
+		default:
+			selected[i] = m.ui.selectedTableCell(selected[i], width)
+		}
+	}
+	return selected
 }
 
 func (m *model) switchTab(delta int) {

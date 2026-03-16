@@ -63,6 +63,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			return m, nil
+		case msg.String() == "enter":
+			if m.isUserTab() {
+				return m, nil
+			}
+			return m, m.openNodeSrunDialog()
 		case msg.String() == "t" || key.Matches(msg, m.keys.NodeDetail):
 			return m, m.toggleNodeDetail()
 		case key.Matches(msg, m.keys.ToggleHelp):

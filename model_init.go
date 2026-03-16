@@ -59,6 +59,7 @@ func newModel(ds dataSource) model {
 
 	h := help.New()
 	h.ShowAll = false
+	ui := newUIStyleSet()
 
 	t := table.New(
 		table.WithColumns([]table.Column{
@@ -74,19 +75,13 @@ func newModel(ds dataSource) model {
 		table.WithFocused(true),
 	)
 	styles := table.DefaultStyles()
-	styles.Header = styles.Header.
-		Bold(true).
-		Foreground(lipgloss.Color(colorFgPrimary))
-	// Keep cell style padding-only; per-cell ANSI colors can reset row-level
-	// selected background in bubbles table rendering.
-	styles.Cell = styles.Cell
-	styles.Selected = lipgloss.NewStyle().
-		Foreground(lipgloss.Color(colorFgPrimary)).
-		Background(lipgloss.Color(colorSelectionBg)).
-		Bold(true)
+	styles.Header = ui.TableHeader
+	styles.Cell = ui.TableCell
+	// Selected row highlight is rendered per-cell in table_ops.go.
+	styles.Selected = styles.Cell
 	t.SetStyles(styles)
 
-	delegate := newUserJobDelegate()
+	delegate := newUserJobDelegate(ui)
 	userList := list.New([]list.Item{}, delegate, 80, 12)
 	userList.Title = "SQUEUE · 0 jobs"
 	userList.SetStatusBarItemName("job", "jobs")
@@ -137,6 +132,7 @@ func newModel(ds dataSource) model {
 		cpuBar:      cpuBar,
 		memBar:      memBar,
 		gpuBar:      gpuBar,
+		ui:          ui,
 		titleStyle: lipgloss.NewStyle().
 			Bold(true).
 			Foreground(lipgloss.Color(colorAccent)),
