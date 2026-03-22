@@ -74,7 +74,7 @@ func (m model) renderModal() string {
 			formView = "-"
 		}
 		body := m.ui.ModalBodyLeft.Width(bodyW).Render(formView)
-		hint := m.ui.ModalRawMeta.Width(bodyW).Render("Enter next/submit  Tab next field  Esc close")
+		hint := m.ui.ModalRawMeta.Width(bodyW).Render("[←/→] Select  [Enter] Next/Run  [Esc] Cancel")
 		content := lipgloss.JoinVertical(lipgloss.Left, title, "", body, "", hint)
 		return m.ui.ModalBox.Width(popupW).Render(content)
 	}

@@ -1,14 +1,149 @@
 package main
 
 import (
+	"errors"
 	"fmt"
+	"io"
 	"strconv"
 	"strings"
 
+	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
 	huh "charm.land/huh/v2"
 	"charm.land/lipgloss/v2"
 )
+
+const memoryModeCustom = "__custom__"
+
+type conditionalField struct {
+	field  huh.Field
+	hidden func() bool
+}
+
+func wrapConditionalField(field huh.Field, hidden func() bool) huh.Field {
+	return &conditionalField{field: field, hidden: hidden}
+}
+
+func (c *conditionalField) isHidden() bool {
+	return c.hidden != nil && c.hidden()
+}
+
+func (c *conditionalField) Init() tea.Cmd {
+	if c.isHidden() {
+		return nil
+	}
+	return c.field.Init()
+}
+
+func (c *conditionalField) Update(msg tea.Msg) (huh.Model, tea.Cmd) {
+	if c.isHidden() {
+		return c, nil
+	}
+	updated, cmd := c.field.Update(msg)
+	if f, ok := updated.(huh.Field); ok {
+		c.field = f
+	}
+	return c, cmd
+}
+
+func (c *conditionalField) View() string {
+	if c.isHidden() {
+		return ""
+	}
+	return c.field.View()
+}
+
+func (c *conditionalField) Blur() tea.Cmd {
+	if c.isHidden() {
+		return nil
+	}
+	return c.field.Blur()
+}
+
+func (c *conditionalField) Focus() tea.Cmd {
+	if c.isHidden() {
+		return nil
+	}
+	return c.field.Focus()
+}
+
+func (c *conditionalField) Error() error {
+	if c.isHidden() {
+		return nil
+	}
+	return c.field.Error()
+}
+
+func (c *conditionalField) Run() error {
+	if c.isHidden() {
+		return nil
+	}
+	return c.field.Run()
+}
+
+func (c *conditionalField) RunAccessible(w io.Writer, r io.Reader) error {
+	if c.isHidden() {
+		return nil
+	}
+	return c.field.RunAccessible(w, r)
+}
+
+func (c *conditionalField) Skip() bool {
+	if c.isHidden() {
+		return true
+	}
+	return c.field.Skip()
+}
+
+func (c *conditionalField) Zoom() bool {
+	if c.isHidden() {
+		return false
+	}
+	return c.field.Zoom()
+}
+
+func (c *conditionalField) KeyBinds() []key.Binding {
+	if c.isHidden() {
+		return nil
+	}
+	return c.field.KeyBinds()
+}
+
+func (c *conditionalField) WithTheme(t huh.Theme) huh.Field {
+	c.field = c.field.WithTheme(t)
+	return c
+}
+
+func (c *conditionalField) WithKeyMap(k *huh.KeyMap) huh.Field {
+	c.field = c.field.WithKeyMap(k)
+	return c
+}
+
+func (c *conditionalField) WithWidth(w int) huh.Field {
+	c.field = c.field.WithWidth(w)
+	return c
+}
+
+func (c *conditionalField) WithHeight(h int) huh.Field {
+	c.field = c.field.WithHeight(h)
+	return c
+}
+
+func (c *conditionalField) WithPosition(p huh.FieldPosition) huh.Field {
+	c.field = c.field.WithPosition(p)
+	return c
+}
+
+func (c *conditionalField) GetKey() string {
+	return c.field.GetKey()
+}
+
+func (c *conditionalField) GetValue() any {
+	if c.isHidden() {
+		return nil
+	}
+	return c.field.GetValue()
+}
 
 func (m *model) openNodeSrunDialog() tea.Cmd {
 	if m.isUserTab() {
@@ -16,7 +151,7 @@ func (m *model) openNodeSrunDialog() tea.Cmd {
 	}
 	node := m.selectedNodeName()
 	if node == "" {
-		m.openModal(modalNodeSrun, "Generate srun", "No node selected.", []modalButton{
+		m.openModal(modalNodeSrun, "Launch srun", "No node selected.", []modalButton{
 			{Label: "Close", Action: modalActionClose},
 		})
 		return nil
@@ -30,24 +165,42 @@ func (m *model) openNodeSrunDialog() tea.Cmd {
 		part = "default"
 	}
 
+	gpuFree := 0
+	cpuFree := 0
+	memFreeMB := 0
+	if n := m.selectedNode(); n != nil {
+		gpuFree = maxInt(0, n.GPUTotal-n.GPUAlloc)
+		cpuFree = maxInt(0, n.CPUTotal-n.CPUAlloc)
+		memFreeMB = maxInt(0, n.MemTotalMB-n.MemAllocMB)
+	}
+
 	gpuDefault := "0"
-	if n := m.selectedNode(); n != nil && n.GPUTotal > 0 {
+	if gpuFree > 0 {
 		gpuDefault = "1"
 	}
 
 	m.srunFormCfg = nodeSrunFormConfig{
-		Partition: part,
-		Node:      node,
-		JobName:   "interactive",
-		CPUs:      "4",
-		Memory:    "16G",
-		GPUs:      gpuDefault,
-		TimeLimit: "01:00:00",
-		Command:   "bash",
+		Partition:    part,
+		Node:         node,
+		Placement:    "Selected node only",
+		JobName:      "interactive",
+		CPUs:         "8",
+		Memory:       "16G",
+		MemoryMode:   "16G",
+		MemoryCustom: "",
+		GPUs:         gpuDefault,
+		TimeLimit:    "02:00:00",
+		QOS:          "",
+		Constraint:   "",
+		ExtraArgs:    "",
+		Command:      "bash",
+		AdvancedOpen: false,
+		Confirmed:    false,
 	}
-	m.srunCommand = ""
-	m.srunForm = newNodeSrunForm(&m.srunFormCfg, m.partitionNames(), m.width)
-	m.openModal(modalNodeSrun, fmt.Sprintf("Generate srun · %s", node), "", []modalButton{
+
+	m.srunCommand = buildSrunCommand(m.srunFormCfg)
+	m.srunForm = newNodeSrunForm(&m.srunFormCfg, m.partitionNames(), gpuFree, cpuFree, memFreeMB, m.width)
+	m.openModal(modalNodeSrun, "Launch srun", "", []modalButton{
 		{Label: "Close", Action: modalActionClose},
 	})
 	if m.srunForm == nil {
@@ -64,9 +217,11 @@ func (m *model) updateNodeSrunForm(msg tea.Msg) tea.Cmd {
 	if form, ok := updated.(*huh.Form); ok {
 		m.srunForm = form
 	}
+
+	m.srunCommand = buildSrunCommand(m.srunFormCfg)
+
 	switch m.srunForm.State {
 	case huh.StateCompleted:
-		m.srunCommand = buildSrunCommand(m.srunFormCfg)
 		m.srunForm = nil
 		m.modalTitle = "srun Command"
 		m.setModalBody(m.srunCommand)
@@ -81,96 +236,212 @@ func (m *model) updateNodeSrunForm(msg tea.Msg) tea.Cmd {
 	}
 }
 
-func newNodeSrunForm(cfg *nodeSrunFormConfig, partitions []string, width int) *huh.Form {
+func newNodeSrunForm(cfg *nodeSrunFormConfig, partitions []string, gpuFree, cpuFree, memFreeMB, width int) *huh.Form {
 	if cfg == nil {
 		return nil
 	}
 	if strings.TrimSpace(cfg.Command) == "" {
 		cfg.Command = "bash"
 	}
-	options := make([]huh.Option[string], 0, len(partitions))
-	for _, p := range partitions {
-		p = strings.TrimSpace(p)
-		if p == "" {
-			continue
-		}
-		options = append(options, huh.NewOption(p, p))
+	if strings.TrimSpace(cfg.CPUs) == "" {
+		cfg.CPUs = "8"
 	}
-	if len(options) == 0 {
-		options = append(options, huh.NewOption("default", "default"))
+	if strings.TrimSpace(cfg.MemoryMode) == "" {
+		cfg.MemoryMode = "16G"
 	}
+	if strings.TrimSpace(cfg.TimeLimit) == "" {
+		cfg.TimeLimit = "02:00:00"
+	}
+
+	partitionOptions := buildPartitionOptions(partitions)
 	if strings.TrimSpace(cfg.Partition) == "" {
-		cfg.Partition = options[0].Value
+		cfg.Partition = partitionOptions[0].Value
+	}
+
+	gpuOptions := buildGPUOptions(gpuFree)
+	if !optionValuesContain(gpuOptions, strings.TrimSpace(cfg.GPUs)) {
+		cfg.GPUs = gpuOptions[0].Value
+	}
+
+	memoryOptions := []huh.Option[string]{
+		huh.NewOption("8G", "8G"),
+		huh.NewOption("16G", "16G"),
+		huh.NewOption("32G", "32G"),
+		huh.NewOption("64G", "64G"),
+		huh.NewOption("128G", "128G"),
+		huh.NewOption("Custom", memoryModeCustom),
+	}
+	if !optionValuesContain(memoryOptions, strings.TrimSpace(cfg.MemoryMode)) {
+		cfg.MemoryMode = "16G"
+	}
+
+	timeOptions := []huh.Option[string]{
+		huh.NewOption("00:30:00", "00:30:00"),
+		huh.NewOption("01:00:00", "01:00:00"),
+		huh.NewOption("02:00:00", "02:00:00"),
+		huh.NewOption("04:00:00", "04:00:00"),
+		huh.NewOption("08:00:00", "08:00:00"),
+		huh.NewOption("24:00:00", "24:00:00"),
+		huh.NewOption("48:00:00", "48:00:00"),
+	}
+	if !optionValuesContain(timeOptions, strings.TrimSpace(cfg.TimeLimit)) {
+		cfg.TimeLimit = "02:00:00"
 	}
 
 	formW := (width * 2) / 3
-	if formW < 52 {
-		formW = 52
+	if formW < 70 {
+		formW = 70
 	}
-	if formW > 94 {
-		formW = 94
+	if formW > 110 {
+		formW = 110
+	}
+
+	nodeSummary := fmt.Sprintf("Node: %s\nFree: %d GPU · %d CPU · %s MEM",
+		strings.TrimSpace(cfg.Node), gpuFree, cpuFree, formatMemMB(memFreeMB))
+
+	fields := []huh.Field{
+		huh.NewNote().
+			Title("Launch srun").
+			Description(nodeSummary),
+
+		huh.NewSelect[string]().
+			Title("Placement").
+			Options(
+				huh.NewOption("Selected node only", "Selected node only"),
+				huh.NewOption("Partition only", "Partition only"),
+			).
+			Value(&cfg.Placement).
+			Inline(true),
+
+		huh.NewSelect[string]().
+			Title("Partition").
+			Options(partitionOptions...).
+			Value(&cfg.Partition).
+			Inline(true),
+
+		huh.NewInput().
+			Title("Run on").
+			Value(&cfg.Node).
+			Inline(true).
+			Validate(func(v string) error {
+				if strings.TrimSpace(cfg.Placement) != "Selected node only" {
+					return nil
+				}
+				if strings.TrimSpace(v) == "" {
+					return errors.New("run on node is required")
+				}
+				return nil
+			}),
+
+		huh.NewSelect[string]().
+			Title("GPU").
+			Options(gpuOptions...).
+			Value(&cfg.GPUs).
+			Inline(true),
+
+		huh.NewInput().
+			Title("CPU").
+			Value(&cfg.CPUs).
+			Inline(true).
+			Validate(minIntField("CPU count", 1)),
+
+		huh.NewSelect[string]().
+			Title("Memory").
+			Options(memoryOptions...).
+			Value(&cfg.MemoryMode).
+			Inline(true),
+
+		wrapConditionalField(
+			huh.NewInput().
+				Title("Memory Custom").
+				Value(&cfg.MemoryCustom).
+				Inline(true).
+				Validate(requiredField("custom memory")),
+			func() bool {
+				return strings.TrimSpace(cfg.MemoryMode) != memoryModeCustom
+			},
+		),
+
+		huh.NewSelect[string]().
+			Title("Time").
+			Options(timeOptions...).
+			Value(&cfg.TimeLimit).
+			Inline(true),
+
+		huh.NewInput().
+			Title("Command").
+			Value(&cfg.Command).
+			Inline(true).
+			Validate(requiredField("command")),
+
+		huh.NewConfirm().
+			TitleFunc(func() string {
+				if cfg.AdvancedOpen {
+					return "Advanced ▾"
+				}
+				return "Advanced ▸"
+			}, cfg).
+			Affirmative("Expanded").
+			Negative("Collapsed").
+			Value(&cfg.AdvancedOpen).
+			Inline(true),
+
+		wrapConditionalField(
+			huh.NewInput().
+				Title("Job name").
+				Value(&cfg.JobName).
+				Inline(true),
+			func() bool { return !cfg.AdvancedOpen },
+		),
+		wrapConditionalField(
+			huh.NewInput().
+				Title("QOS").
+				Value(&cfg.QOS).
+				Inline(true),
+			func() bool { return !cfg.AdvancedOpen },
+		),
+		wrapConditionalField(
+			huh.NewInput().
+				Title("Constraint").
+				Value(&cfg.Constraint).
+				Inline(true),
+			func() bool { return !cfg.AdvancedOpen },
+		),
+		wrapConditionalField(
+			huh.NewInput().
+				Title("Extra args").
+				Value(&cfg.ExtraArgs).
+				Inline(true),
+			func() bool { return !cfg.AdvancedOpen },
+		),
+
+		huh.NewNote().
+			Title("Preview").
+			DescriptionFunc(func() string {
+				return buildSrunCommand(*cfg)
+			}, cfg),
+
+		huh.NewConfirm().
+			Title("Run").
+			Description("Press Enter to confirm and generate").
+			Affirmative("Run").
+			Negative("Cancel").
+			Value(&cfg.Confirmed).
+			Inline(true).
+			Validate(func(v bool) error {
+				if !v {
+					return errors.New("select Run to continue")
+				}
+				return nil
+			}),
 	}
 
 	form := huh.NewForm(
-		huh.NewGroup(
-			huh.NewSelect[string]().
-				Title("Partition").
-				Description("Select target partition").
-				Options(options...).
-				Value(&cfg.Partition),
-			huh.NewInput().
-				Title("Node").
-				Description("Target node name").
-				Value(&cfg.Node).
-				Validate(requiredField("node")),
-			huh.NewInput().
-				Title("Job Name").
-				Description("SLURM job-name label").
-				Value(&cfg.JobName).
-				Validate(requiredField("job name")),
-		),
-		huh.NewGroup(
-			huh.NewInput().
-				Title("CPUs").
-				Description("cpus-per-task").
-				Value(&cfg.CPUs).
-				Validate(minIntField("CPUs", 1)),
-			huh.NewInput().
-				Title("Memory").
-				Description("Examples: 16G, 64000").
-				Value(&cfg.Memory).
-				Validate(requiredField("memory")),
-			huh.NewInput().
-				Title("GPUs").
-				Description("0 means no GPU request").
-				Value(&cfg.GPUs).
-				Validate(minIntField("GPUs", 0)),
-			huh.NewInput().
-				Title("Time Limit").
-				Description("Examples: 01:00:00, 2:00:00").
-				Value(&cfg.TimeLimit).
-				Validate(requiredField("time limit")),
-		),
-		huh.NewGroup(
-			huh.NewInput().
-				Title("WorkDir").
-				Description("Optional: empty = current directory").
-				Value(&cfg.WorkDir),
-			huh.NewInput().
-				Title("Extra Args").
-				Description("Optional: e.g. --pty").
-				Value(&cfg.ExtraArgs),
-			huh.NewInput().
-				Title("Command").
-				Description("Command after '--', e.g. bash -lc 'nvidia-smi'").
-				Value(&cfg.Command).
-				Validate(requiredField("command")),
-		),
+		huh.NewGroup(fields...),
 	).
 		WithTheme(newNodeSrunTheme()).
 		WithWidth(formW).
 		WithShowHelp(false)
-
 	return form
 }
 
@@ -240,6 +511,44 @@ func (m *model) partitionNames() []string {
 	return out
 }
 
+func buildPartitionOptions(partitions []string) []huh.Option[string] {
+	options := make([]huh.Option[string], 0, len(partitions))
+	for _, p := range partitions {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			options = append(options, huh.NewOption(p, p))
+		}
+	}
+	if len(options) == 0 {
+		options = append(options, huh.NewOption("default", "default"))
+	}
+	return options
+}
+
+func buildGPUOptions(gpuFree int) []huh.Option[string] {
+	if gpuFree < 0 {
+		gpuFree = 0
+	}
+	options := make([]huh.Option[string], 0, gpuFree+1)
+	for i := 0; i <= gpuFree; i++ {
+		v := strconv.Itoa(i)
+		options = append(options, huh.NewOption(v, v))
+	}
+	if len(options) == 0 {
+		options = append(options, huh.NewOption("0", "0"))
+	}
+	return options
+}
+
+func optionValuesContain(options []huh.Option[string], value string) bool {
+	for _, op := range options {
+		if op.Value == value {
+			return true
+		}
+	}
+	return false
+}
+
 func requiredField(field string) func(string) error {
 	return func(v string) error {
 		if strings.TrimSpace(v) == "" {
@@ -266,21 +575,39 @@ func minIntField(field string, min int) func(string) error {
 	}
 }
 
+func resolvedMemory(cfg nodeSrunFormConfig) string {
+	if strings.TrimSpace(cfg.MemoryMode) == memoryModeCustom {
+		return strings.TrimSpace(cfg.MemoryCustom)
+	}
+	if v := strings.TrimSpace(cfg.MemoryMode); v != "" {
+		return v
+	}
+	return strings.TrimSpace(cfg.Memory)
+}
+
 func buildSrunCommand(cfg nodeSrunFormConfig) string {
 	args := []string{"srun"}
 	if v := strings.TrimSpace(cfg.Partition); v != "" {
 		args = append(args, "--partition="+shellQuote(v))
 	}
-	if v := strings.TrimSpace(cfg.Node); v != "" {
-		args = append(args, "--nodelist="+shellQuote(v))
+	if strings.TrimSpace(cfg.Placement) == "Selected node only" {
+		if v := strings.TrimSpace(cfg.Node); v != "" {
+			args = append(args, "--nodelist="+shellQuote(v))
+		}
 	}
 	if v := strings.TrimSpace(cfg.JobName); v != "" {
 		args = append(args, "--job-name="+shellQuote(v))
 	}
+	if v := strings.TrimSpace(cfg.QOS); v != "" {
+		args = append(args, "--qos="+shellQuote(v))
+	}
+	if v := strings.TrimSpace(cfg.Constraint); v != "" {
+		args = append(args, "--constraint="+shellQuote(v))
+	}
 	if v := strings.TrimSpace(cfg.CPUs); v != "" {
 		args = append(args, "--cpus-per-task="+v)
 	}
-	if v := strings.TrimSpace(cfg.Memory); v != "" {
+	if v := resolvedMemory(cfg); v != "" {
 		args = append(args, "--mem="+shellQuote(v))
 	}
 	if v := strings.TrimSpace(cfg.GPUs); v != "" && v != "0" {
@@ -288,9 +615,6 @@ func buildSrunCommand(cfg nodeSrunFormConfig) string {
 	}
 	if v := strings.TrimSpace(cfg.TimeLimit); v != "" {
 		args = append(args, "--time="+shellQuote(v))
-	}
-	if v := strings.TrimSpace(cfg.WorkDir); v != "" {
-		args = append(args, "--chdir="+shellQuote(v))
 	}
 	if v := strings.TrimSpace(cfg.ExtraArgs); v != "" {
 		args = append(args, v)

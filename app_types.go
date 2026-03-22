@@ -121,16 +121,22 @@ type quotaEntry struct {
 }
 
 type nodeSrunFormConfig struct {
-	Partition string
-	Node      string
-	JobName   string
-	CPUs      string
-	Memory    string
-	GPUs      string
-	TimeLimit string
-	WorkDir   string
-	ExtraArgs string
-	Command   string
+	Partition    string
+	Node         string
+	Placement    string
+	JobName      string
+	CPUs         string
+	Memory       string
+	MemoryMode   string
+	MemoryCustom string
+	GPUs         string
+	TimeLimit    string
+	QOS          string
+	Constraint   string
+	ExtraArgs    string
+	Command      string
+	AdvancedOpen bool
+	Confirmed    bool
 }
 
 type keyMap struct {

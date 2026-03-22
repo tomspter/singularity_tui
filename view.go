@@ -225,7 +225,7 @@ func (m model) renderStatusHelp() string {
 			return "r raw on/off  ↑/↓ or j/k scroll raw  ←/→ button  Enter select  esc close"
 		}
 		if m.modalKind == modalNodeSrun && m.srunForm != nil {
-			return "Tab next field  Shift+Tab prev field  Enter next/submit  esc close  q quit"
+			return "↑/↓ next field  ←/→ change option  Enter next/run  esc close  q quit"
 		}
 		return "←/→ focus button  Enter/y select  n/esc close  q quit"
 	}
